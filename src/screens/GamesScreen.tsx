@@ -1,6 +1,7 @@
-import { Image, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { Image, RefreshControl, ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
 
 import { avatarExpressionLabel } from "../features/avatar/avatarPack";
+import { buildClassicBoardCells } from "../features/game/board";
 import { GameEventView, useFamilyGame } from "../features/game/useFamilyGame";
 import { Json } from "../lib/database.types";
 import { AppText } from "../ui/primitives/AppText";
@@ -8,6 +9,8 @@ import { InfoCard } from "../ui/primitives/InfoCard";
 import { PrimaryButton } from "../ui/primitives/PrimaryButton";
 import { Screen } from "../ui/primitives/Screen";
 import { useTheme } from "../ui/theme/ThemeProvider";
+
+const BOARD_CELLS = buildClassicBoardCells();
 
 function asJsonObject(value: Json): Record<string, Json> | null {
   if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -63,17 +66,141 @@ function formatEventSummary(event: GameEventView): string {
   return event.eventType;
 }
 
+type BannerTone = "neutral" | "success" | "danger";
+
+function resolveEventBanner(
+  event: GameEventView | null,
+  playerNameById: Map<string, string>,
+): { id: number; text: string; tone: BannerTone } | null {
+  if (!event) {
+    return null;
+  }
+
+  const payload = asJsonObject(event.payload);
+  if (!payload) {
+    return null;
+  }
+
+  if (event.eventType === "game_started") {
+    return {
+      id: event.id,
+      text: "Game started. Good luck!",
+      tone: "neutral",
+    };
+  }
+
+  if (event.eventType !== "roll_move") {
+    return null;
+  }
+
+  const actorName = event.createdBy ? playerNameById.get(event.createdBy) ?? `User ${event.createdBy.slice(0, 8)}` : "Player";
+  const dice = toNumberValue(payload.dice);
+  const fromTile = toNumberValue(payload.from_tile);
+  const toTile = toNumberValue(payload.to_tile);
+  const transition = toStringValue(payload.transition) ?? "none";
+  const status = toStringValue(payload.status);
+  const winnerUserId = toStringValue(payload.winner_user_id);
+
+  if (status === "finished" && winnerUserId) {
+    const winnerName = playerNameById.get(winnerUserId) ?? `User ${winnerUserId.slice(0, 8)}`;
+    return {
+      id: event.id,
+      text: `${winnerName} wins the game!`,
+      tone: "success",
+    };
+  }
+
+  if (dice !== null && fromTile !== null && toTile !== null) {
+    if (transition === "ladder") {
+      return {
+        id: event.id,
+        text: `${actorName} rolled ${dice} and climbed a ladder to ${toTile}.`,
+        tone: "success",
+      };
+    }
+
+    if (transition === "snake" || transition === "big_snake") {
+      return {
+        id: event.id,
+        text: `${actorName} rolled ${dice} and slid to ${toTile}.`,
+        tone: "danger",
+      };
+    }
+
+    return {
+      id: event.id,
+      text: `${actorName} rolled ${dice}: ${fromTile} -> ${toTile}.`,
+      tone: "neutral",
+    };
+  }
+
+  return {
+    id: event.id,
+    text: formatEventSummary(event),
+    tone: "neutral",
+  };
+}
+
 export function GamesScreen() {
   const { colors, spacing } = useTheme();
+  const { width, height } = useWindowDimensions();
   const gameState = useFamilyGame();
+  const isLandscape = width > height;
 
   const currentTurnLabel = (() => {
+    if (gameState.game?.status === "finished") {
+      return "Game finished";
+    }
+
     if (!gameState.game?.current_turn_user_id) {
       return "No active turn";
     }
 
     const currentPlayer = gameState.players.find((player) => player.userId === gameState.game?.current_turn_user_id);
     return currentPlayer?.displayName ?? `User ${gameState.game.current_turn_user_id.slice(0, 8)}`;
+  })();
+  const playerNameById = new Map(gameState.players.map((player) => [player.userId, player.displayName]));
+  const playersByTile = new Map<number, typeof gameState.players>();
+  for (const player of gameState.players) {
+    const current = playersByTile.get(player.tilePosition);
+    if (current) {
+      current.push(player);
+    } else {
+      playersByTile.set(player.tilePosition, [player]);
+    }
+  }
+  const latestEvent = gameState.events[0] ?? null;
+  const eventBanner = resolveEventBanner(latestEvent, playerNameById);
+  const eventBannerColors = (() => {
+    if (!eventBanner) {
+      return {
+        background: colors.background,
+        border: colors.border,
+        text: colors.text,
+      };
+    }
+
+    if (eventBanner.tone === "success") {
+      return {
+        background: "#e9f9ee",
+        border: "#7bcf97",
+        text: "#165b2f",
+      };
+    }
+
+    if (eventBanner.tone === "danger") {
+      return {
+        background: "#fdeeee",
+        border: "#f4b7b7",
+        text: "#7c1f1f",
+      };
+    }
+
+    return {
+      background: colors.background,
+      border: colors.border,
+      text: colors.text,
+    };
   })();
 
   return (
@@ -91,98 +218,198 @@ export function GamesScreen() {
           </InfoCard>
         ) : null}
 
-        <InfoCard>
-          <AppText variant="title">{gameState.roomTitle}</AppText>
-          {gameState.game ? (
-            <View style={{ gap: spacing.xs }}>
-              <AppText muted>Status: {gameState.game.status}</AppText>
-              <AppText muted>Current Turn: {currentTurnLabel}</AppText>
-              <AppText muted>Game ID: {gameState.game.id.slice(0, 8)}</AppText>
-            </View>
-          ) : (
-            <AppText muted>No active game. Start a game to begin turns.</AppText>
-          )}
-        </InfoCard>
+        <View style={[styles.layout, isLandscape && styles.layoutLandscape, { gap: spacing.md }]}>
+          <View style={[styles.boardColumn, isLandscape && styles.boardColumnLandscape, { gap: spacing.md }]}>
+            <InfoCard>
+              <AppText variant="title">{gameState.roomTitle}</AppText>
+              {gameState.game ? (
+                <View style={{ gap: spacing.xs }}>
+                  <AppText muted>Status: {gameState.game.status}</AppText>
+                  <AppText muted>Current Turn: {currentTurnLabel}</AppText>
+                  <AppText muted>Game ID: {gameState.game.id.slice(0, 8)}</AppText>
+                </View>
+              ) : (
+                <AppText muted>No active game. Start a game to begin turns.</AppText>
+              )}
+            </InfoCard>
 
-        <InfoCard>
-          <AppText variant="title">Actions</AppText>
-          <AppText muted>
-            {gameState.role === "admin"
-              ? "Admins can start a game. Only the active player can roll."
-              : "Only admins can start a game. Roll is available on your turn."}
-          </AppText>
+            <InfoCard>
+              <AppText variant="title">Board</AppText>
+              <AppText muted>Classic v1 mapping with fixed snakes and ladders.</AppText>
 
-          <PrimaryButton
-            onPress={() => {
-              void gameState.startGame();
-            }}
-            disabled={!gameState.canStartGame || gameState.startingGame || gameState.loading}
-          >
-            {gameState.startingGame ? "Starting Game..." : "Start New Game"}
-          </PrimaryButton>
-
-          <PrimaryButton
-            onPress={() => {
-              void gameState.rollMove();
-            }}
-            disabled={!gameState.canRoll || gameState.rolling || gameState.loading}
-          >
-            {gameState.rolling ? "Rolling..." : "Roll Dice"}
-          </PrimaryButton>
-        </InfoCard>
-
-        <InfoCard>
-          <AppText variant="title">Players</AppText>
-          {gameState.players.length === 0 ? (
-            <AppText muted>No players in active game.</AppText>
-          ) : (
-            <View style={{ gap: spacing.xs }}>
-              {gameState.players.map((player) => (
+              {eventBanner ? (
                 <View
-                  key={player.userId}
-                  style={[styles.playerRow, { borderColor: colors.border, backgroundColor: colors.background }]}
+                  style={[
+                    styles.eventBanner,
+                    {
+                      backgroundColor: eventBannerColors.background,
+                      borderColor: eventBannerColors.border,
+                    },
+                  ]}
                 >
-                  {player.avatarUrl ? (
-                    <Image source={{ uri: player.avatarUrl }} style={styles.playerAvatar} />
-                  ) : (
+                  <AppText style={{ color: eventBannerColors.text }}>{eventBanner.text}</AppText>
+                </View>
+              ) : null}
+
+              <View style={[styles.boardGrid, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                {BOARD_CELLS.map((cell) => {
+                  const tilePlayers = playersByTile.get(cell.tile) ?? [];
+
+                  return (
                     <View
+                      key={cell.tile}
                       style={[
-                        styles.playerAvatar,
-                        styles.playerAvatarFallback,
-                        { borderColor: colors.border, backgroundColor: colors.surface },
+                        styles.boardCell,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: (cell.row + cell.column) % 2 === 0 ? "#f8f9fb" : "#eef2f6",
+                        },
                       ]}
                     >
-                      <AppText muted>?</AppText>
-                    </View>
-                  )}
-                  <View style={styles.playerMeta}>
-                    <AppText muted>
-                      {player.playerOrder}. {player.displayName} - tile {player.tilePosition}
-                    </AppText>
-                    <AppText variant="caption" muted>
-                      Expression: {avatarExpressionLabel(player.expression)}
-                    </AppText>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-        </InfoCard>
+                      <View style={styles.cellHeader}>
+                        <AppText variant="caption" muted>
+                          {cell.tile}
+                        </AppText>
+                        {cell.jumpType ? (
+                          <AppText
+                            variant="caption"
+                            style={{
+                              color: cell.jumpType === "ladder" ? "#1b7f3b" : "#9b2c2c",
+                            }}
+                          >
+                            {cell.jumpType === "ladder" ? `L${cell.jumpTo}` : `S${cell.jumpTo}`}
+                          </AppText>
+                        ) : null}
+                      </View>
 
-        <InfoCard>
-          <AppText variant="title">Recent Events</AppText>
-          {gameState.events.length === 0 ? (
-            <AppText muted>No game events yet.</AppText>
-          ) : (
-            <View style={{ gap: spacing.xs }}>
-              {gameState.events.slice(0, 8).map((event) => (
-                <AppText key={event.id} muted>
-                  {new Date(event.createdAt).toLocaleTimeString()} - {formatEventSummary(event)}
-                </AppText>
-              ))}
-            </View>
-          )}
-        </InfoCard>
+                      <View style={styles.tileTokenRow}>
+                        {tilePlayers.slice(0, 3).map((player) => {
+                          const isCurrentTurn = Boolean(
+                            gameState.game?.status === "active" &&
+                              gameState.game.current_turn_user_id &&
+                              player.userId === gameState.game.current_turn_user_id,
+                          );
+
+                          return (
+                            <View
+                              key={player.userId}
+                              style={[
+                                styles.tileToken,
+                                {
+                                  borderColor: isCurrentTurn ? colors.primary : colors.border,
+                                  backgroundColor: colors.surface,
+                                },
+                              ]}
+                            >
+                              {player.avatarUrl ? (
+                                <Image source={{ uri: player.avatarUrl }} style={styles.tileTokenImage} />
+                              ) : (
+                                <AppText variant="caption" muted>
+                                  {player.playerOrder}
+                                </AppText>
+                              )}
+                            </View>
+                          );
+                        })}
+                        {tilePlayers.length > 3 ? (
+                          <AppText variant="caption" muted>
+                            +{tilePlayers.length - 3}
+                          </AppText>
+                        ) : null}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+
+              <AppText variant="caption" muted>
+                L = ladder, S = snake
+              </AppText>
+            </InfoCard>
+          </View>
+
+          <View style={[styles.sideColumn, { gap: spacing.md }]}>
+            <InfoCard>
+              <AppText variant="title">Actions</AppText>
+              <AppText muted>
+                {gameState.role === "admin"
+                  ? "Admins can start a game. Only the active player can roll."
+                  : "Only admins can start a game. Roll is available on your turn."}
+              </AppText>
+
+              <PrimaryButton
+                onPress={() => {
+                  void gameState.startGame();
+                }}
+                disabled={!gameState.canStartGame || gameState.startingGame || gameState.loading}
+              >
+                {gameState.startingGame ? "Starting Game..." : "Start New Game"}
+              </PrimaryButton>
+
+              <PrimaryButton
+                onPress={() => {
+                  void gameState.rollMove();
+                }}
+                disabled={!gameState.canRoll || gameState.rolling || gameState.loading}
+              >
+                {gameState.rolling ? "Rolling..." : "Roll Dice"}
+              </PrimaryButton>
+            </InfoCard>
+
+            <InfoCard>
+              <AppText variant="title">Players</AppText>
+              {gameState.players.length === 0 ? (
+                <AppText muted>No players in active game.</AppText>
+              ) : (
+                <View style={{ gap: spacing.xs }}>
+                  {gameState.players.map((player) => (
+                    <View
+                      key={player.userId}
+                      style={[styles.playerRow, { borderColor: colors.border, backgroundColor: colors.background }]}
+                    >
+                      {player.avatarUrl ? (
+                        <Image source={{ uri: player.avatarUrl }} style={styles.playerAvatar} />
+                      ) : (
+                        <View
+                          style={[
+                            styles.playerAvatar,
+                            styles.playerAvatarFallback,
+                            { borderColor: colors.border, backgroundColor: colors.surface },
+                          ]}
+                        >
+                          <AppText muted>?</AppText>
+                        </View>
+                      )}
+                      <View style={styles.playerMeta}>
+                        <AppText muted>
+                          {player.playerOrder}. {player.displayName} - tile {player.tilePosition}
+                        </AppText>
+                        <AppText variant="caption" muted>
+                          Expression: {avatarExpressionLabel(player.expression)}
+                        </AppText>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </InfoCard>
+
+            <InfoCard>
+              <AppText variant="title">Recent Events</AppText>
+              {gameState.events.length === 0 ? (
+                <AppText muted>No game events yet.</AppText>
+              ) : (
+                <View style={{ gap: spacing.xs }}>
+                  {gameState.events.slice(0, 8).map((event) => (
+                    <AppText key={event.id} muted>
+                      {new Date(event.createdAt).toLocaleTimeString()} - {formatEventSummary(event)}
+                    </AppText>
+                  ))}
+                </View>
+              )}
+            </InfoCard>
+          </View>
+        </View>
       </ScrollView>
     </Screen>
   );
@@ -191,6 +418,65 @@ export function GamesScreen() {
 const styles = StyleSheet.create({
   content: {
     flex: 1,
+  },
+  layout: {
+    flexDirection: "column",
+  },
+  layoutLandscape: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  boardColumn: {
+    flexGrow: 1,
+  },
+  boardColumnLandscape: {
+    flex: 1.2,
+  },
+  sideColumn: {
+    flexGrow: 1,
+  },
+  eventBanner: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+  },
+  boardGrid: {
+    width: "100%",
+    aspectRatio: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    borderWidth: 1,
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  boardCell: {
+    width: "10%",
+    borderWidth: 0.5,
+    padding: 2,
+    justifyContent: "space-between",
+  },
+  cellHeader: {
+    alignItems: "flex-start",
+    gap: 1,
+  },
+  tileTokenRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    flexWrap: "wrap",
+  },
+  tileToken: {
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+    borderWidth: 1,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tileTokenImage: {
+    width: "100%",
+    height: "100%",
   },
   playerRow: {
     flexDirection: "row",

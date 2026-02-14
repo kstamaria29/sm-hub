@@ -16,6 +16,11 @@ export type ChatMessage = {
   created_at: string;
 };
 
+type UserProfileName = {
+  user_id: string;
+  display_name: string | null;
+};
+
 function byTimestampAscending(left: ChatMessage, right: ChatMessage) {
   if (left.created_at < right.created_at) {
     return -1;
@@ -36,6 +41,7 @@ export function useFamilyChat() {
   const [error, setError] = useState<string | null>(null);
   const [room, setRoom] = useState<ChatRoom | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [senderNames, setSenderNames] = useState<Map<string, string>>(new Map());
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -118,7 +124,35 @@ export function useFamilyChat() {
       return;
     }
 
-    setMessages((messageRows ?? []) as ChatMessage[]);
+    const loadedMessages = (messageRows ?? []) as ChatMessage[];
+    setMessages(loadedMessages);
+
+    const senderIds = Array.from(new Set(loadedMessages.map((message) => message.sender_id)));
+    if (senderIds.length > 0) {
+      const { data: profiles, error: profileNamesError } = await supabase
+        .from("user_profiles")
+        .select("user_id,display_name")
+        .eq("family_id", chatRoom.family_id)
+        .in("user_id", senderIds);
+
+      if (profileNamesError) {
+        setLoading(false);
+        setError(profileNamesError.message);
+        return;
+      }
+
+      const rows = (profiles ?? []) as UserProfileName[];
+      setSenderNames(
+        new Map(
+          rows
+            .filter((entry) => Boolean(entry.display_name))
+            .map((entry) => [entry.user_id, entry.display_name as string]),
+        ),
+      );
+    } else {
+      setSenderNames(new Map());
+    }
+
     setLoading(false);
   }, [supabase]);
 
@@ -143,6 +177,28 @@ export function useFamilyChat() {
         },
         (payload) => {
           const incomingMessage = payload.new as ChatMessage;
+
+          void (async () => {
+            const { data: profile } = await supabase
+              .from("user_profiles")
+              .select("display_name")
+              .eq("user_id", incomingMessage.sender_id)
+              .maybeSingle();
+
+            const displayName = profile?.display_name;
+            if (displayName && displayName.trim().length > 0) {
+              setSenderNames((current) => {
+                if (current.get(incomingMessage.sender_id) === displayName) {
+                  return current;
+                }
+
+                const next = new Map(current);
+                next.set(incomingMessage.sender_id, displayName);
+                return next;
+              });
+            }
+          })();
+
           setMessages((current) => {
             if (current.some((message) => message.id === incomingMessage.id)) {
               return current;
@@ -195,6 +251,7 @@ export function useFamilyChat() {
     error,
     roomTitle: room?.title ?? "Family Chat",
     messages,
+    senderNames,
     sendMessage,
     refresh: load,
   };

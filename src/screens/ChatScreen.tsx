@@ -16,7 +16,8 @@ import { useTheme } from "../ui/theme/ThemeProvider";
 
 export function ChatScreen() {
   const { colors, spacing, radius } = useTheme();
-  const { configured, loading, sending, error, roomTitle, messages, sendMessage, refresh } = useFamilyChat();
+  const { configured, loading, sending, error, roomTitle, messages, senderNames, sendMessage, refresh } =
+    useFamilyChat();
   const [draftMessage, setDraftMessage] = useState("");
 
   const emptyStateText = useMemo(() => {
@@ -76,7 +77,7 @@ export function ChatScreen() {
                 ]}
               >
                 <AppText variant="caption" muted>
-                  {item.sender_id}
+                  {senderNames.get(item.sender_id) ?? item.sender_id}
                 </AppText>
                 <AppText>{item.content}</AppText>
                 <AppText variant="caption" muted>
