@@ -2,17 +2,13 @@ import { NavigationContainer, Theme as NavigationTheme } from "@react-navigation
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 
 import { useOnboardingGate } from "../features/onboarding/useOnboardingGate";
+import { RootTabParamList } from "./types";
+import { AvatarsScreen } from "../screens/AvatarsScreen";
 import { ChatScreen } from "../screens/ChatScreen";
 import { GamesScreen } from "../screens/GamesScreen";
 import { OnboardingScreen } from "../screens/OnboardingScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
 import { useTheme } from "../ui/theme/ThemeProvider";
-
-type RootTabParamList = {
-  Chat: undefined;
-  Games: undefined;
-  Profile: undefined;
-};
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
@@ -37,6 +33,15 @@ function AppTabs() {
         name="Profile"
         component={ProfileScreen}
         options={{ title: "Settings/Profile" }}
+      />
+      <Tab.Screen
+        name="Avatars"
+        component={AvatarsScreen}
+        options={{
+          title: "Avatars",
+          tabBarButton: () => null,
+          tabBarStyle: { display: "none" },
+        }}
       />
     </Tab.Navigator>
   );

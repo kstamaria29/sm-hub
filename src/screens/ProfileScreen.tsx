@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, Pressable, StyleSheet, Switch, TextInput, View } from "react-native";
+import { Image, ScrollView, StyleSheet, Switch, TextInput, View } from "react-native";
+import { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+import { useNavigation } from "@react-navigation/native";
+import * as ImagePicker from "expo-image-picker";
 
 import {
-  avatarExpressionLabel,
-  AVATAR_EXPRESSIONS,
-  AvatarExpression,
-  createSignedAvatarUrl,
+  buildAvatarOriginalPath,
+  createSignedOriginalAvatarUrl,
+  findExistingOriginalAvatarPath,
+  resolveImageExtension,
 } from "../features/avatar/avatarPack";
 import { getSupabaseClient, isSupabaseConfigured } from "../lib/supabase";
+import { RootTabParamList } from "../navigation/types";
 import { AppText } from "../ui/primitives/AppText";
 import { InfoCard } from "../ui/primitives/InfoCard";
 import { PrimaryButton } from "../ui/primitives/PrimaryButton";
@@ -21,31 +25,37 @@ type ProvisionResponse = {
   };
 };
 
-type AvatarPackStatus = "queued" | "processing" | "ready" | "failed";
+function decodeBase64ToBytes(base64: string): Uint8Array {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const clean = base64.replace(/[^A-Za-z0-9+/=]/g, "");
+  const outputLength = Math.floor((clean.length * 3) / 4) - (clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0);
+  const bytes = new Uint8Array(outputLength);
 
-type AvatarPackSummary = {
-  styleId: string;
-  version: number;
-  status: AvatarPackStatus;
-  createdAt: string;
-  basePath: string;
-};
+  let byteIndex = 0;
+  for (let i = 0; i < clean.length; i += 4) {
+    const a = alphabet.indexOf(clean[i] ?? "A");
+    const b = alphabet.indexOf(clean[i + 1] ?? "A");
+    const c = clean[i + 2] === "=" ? 64 : alphabet.indexOf(clean[i + 2] ?? "A");
+    const d = clean[i + 3] === "=" ? 64 : alphabet.indexOf(clean[i + 3] ?? "A");
 
-type AvatarPreviewItem = {
-  expression: AvatarExpression;
-  imageUrl: string;
-};
+    const triple = (a << 18) | (b << 12) | ((c & 63) << 6) | (d & 63);
 
-const AVATAR_STYLE_OPTIONS = [
-  { id: "storybook", label: "Storybook" },
-  { id: "comic", label: "Comic" },
-  { id: "anime-soft", label: "Anime Soft" },
-  { id: "watercolor", label: "Watercolor" },
-  { id: "3d-toy", label: "3D Toy" },
-  { id: "pixel", label: "Pixel" },
-  { id: "paper-cut", label: "Paper Cut" },
-  { id: "flat-minimal", label: "Flat Minimal" },
-] as const;
+    if (byteIndex < outputLength) {
+      bytes[byteIndex] = (triple >> 16) & 0xff;
+      byteIndex += 1;
+    }
+    if (c !== 64 && byteIndex < outputLength) {
+      bytes[byteIndex] = (triple >> 8) & 0xff;
+      byteIndex += 1;
+    }
+    if (d !== 64 && byteIndex < outputLength) {
+      bytes[byteIndex] = triple & 0xff;
+      byteIndex += 1;
+    }
+  }
+
+  return bytes;
+}
 
 async function parseFunctionInvokeError(error: { message: string; context?: Response }): Promise<string> {
   const context = error.context;
@@ -80,6 +90,7 @@ async function parseFunctionInvokeError(error: { message: string; context?: Resp
 
 export function ProfileScreen() {
   const { colors, spacing } = useTheme();
+  const navigation = useNavigation<BottomTabNavigationProp<RootTabParamList>>();
   const supabase = useMemo(() => getSupabaseClient(), []);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -87,17 +98,15 @@ export function ProfileScreen() {
   const [role, setRole] = useState<"admin" | "member" | null>(null);
   const [loadingRole, setLoadingRole] = useState(true);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [profileDisplayName, setProfileDisplayName] = useState("");
   const [savedDisplayName, setSavedDisplayName] = useState("");
   const [isSavingDisplayName, setIsSavingDisplayName] = useState(false);
   const [cinematicsEnabled, setCinematicsEnabled] = useState(true);
   const [isSavingCinematics, setIsSavingCinematics] = useState(false);
-  const [selectedStyleId, setSelectedStyleId] = useState<string>(AVATAR_STYLE_OPTIONS[0].id);
-  const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false);
-  const [avatarProgress, setAvatarProgress] = useState<string | null>(null);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
-  const [latestAvatarPack, setLatestAvatarPack] = useState<AvatarPackSummary | null>(null);
-  const [avatarPreviews, setAvatarPreviews] = useState<AvatarPreviewItem[]>([]);
+  const [isUploadingOriginalPhoto, setIsUploadingOriginalPhoto] = useState(false);
+  const [originalPhotoPath, setOriginalPhotoPath] = useState<string | null>(null);
+  const [originalPhotoUrl, setOriginalPhotoUrl] = useState<string | null>(null);
 
   const [adminError, setAdminError] = useState<string | null>(null);
   const [memberEmail, setMemberEmail] = useState("");
@@ -108,33 +117,6 @@ export function ProfileScreen() {
     temporaryPassword: string;
   } | null>(null);
 
-  const loadAvatarPreviews = useCallback(
-    async (basePath: string) => {
-      if (!supabase) {
-        setAvatarPreviews([]);
-        return;
-      }
-
-      const previewResults = await Promise.all(
-        AVATAR_EXPRESSIONS.map(async (expression) => {
-          const imagePath = `${basePath}/${expression}.png`;
-          const imageUrl = await createSignedAvatarUrl(supabase, imagePath);
-          if (!imageUrl) {
-            return null;
-          }
-
-          return {
-            expression,
-            imageUrl,
-          } satisfies AvatarPreviewItem;
-        }),
-      );
-
-      setAvatarPreviews(previewResults.filter((item): item is AvatarPreviewItem => item !== null));
-    },
-    [supabase],
-  );
-
   const loadRole = useCallback(async () => {
     if (!supabase || !isSupabaseConfigured) {
       setLoadingRole(false);
@@ -144,8 +126,8 @@ export function ProfileScreen() {
 
     setLoadingRole(true);
     setSettingsError(null);
+    setPhotoError(null);
     setAdminError(null);
-    setAvatarError(null);
 
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
     if (sessionError) {
@@ -163,14 +145,14 @@ export function ProfileScreen() {
       setFamilyId(null);
       setProfileDisplayName("");
       setSavedDisplayName("");
-      setLatestAvatarPack(null);
-      setAvatarPreviews([]);
+      setOriginalPhotoPath(null);
+      setOriginalPhotoUrl(null);
       return;
     }
 
     const { data: profileData, error: profileError } = await supabase
       .from("user_profiles")
-      .select("family_id,cinematics_enabled,avatar_style_id,display_name")
+      .select("family_id,cinematics_enabled,display_name")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -186,24 +168,23 @@ export function ProfileScreen() {
       setFamilyId(null);
       setProfileDisplayName("");
       setSavedDisplayName("");
-      setLatestAvatarPack(null);
-      setAvatarPreviews([]);
+      setOriginalPhotoPath(null);
+      setOriginalPhotoUrl(null);
       return;
     }
 
-    setFamilyId(profileData.family_id);
+    const resolvedFamilyId = profileData.family_id;
+    setFamilyId(resolvedFamilyId);
+
     const loadedDisplayName = profileData.display_name ?? "";
     setProfileDisplayName(loadedDisplayName);
     setSavedDisplayName(loadedDisplayName);
     setCinematicsEnabled(profileData.cinematics_enabled ?? true);
-    if (profileData.avatar_style_id) {
-      setSelectedStyleId(profileData.avatar_style_id);
-    }
 
     const { data: membershipData, error: membershipError } = await supabase
       .from("family_members")
       .select("role")
-      .eq("family_id", profileData.family_id)
+      .eq("family_id", resolvedFamilyId)
       .eq("user_id", userId)
       .eq("status", "active")
       .maybeSingle();
@@ -222,43 +203,16 @@ export function ProfileScreen() {
 
     setRole(membershipData.role === "admin" ? "admin" : "member");
 
-    const { data: latestPack, error: latestPackError } = await supabase
-      .from("avatar_packs")
-      .select("style_id,version,status,created_at,base_path")
-      .eq("family_id", profileData.family_id)
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (latestPackError) {
-      setLoadingRole(false);
-      setSettingsError(latestPackError.message);
-      return;
-    }
-
-    if (!latestPack) {
-      setLatestAvatarPack(null);
-      setAvatarPreviews([]);
-      setLoadingRole(false);
-      return;
-    }
-
-    setLatestAvatarPack({
-      styleId: latestPack.style_id,
-      version: latestPack.version,
-      status: latestPack.status as AvatarPackStatus,
-      createdAt: latestPack.created_at,
-      basePath: latestPack.base_path,
-    });
-    if (latestPack.status === "ready") {
-      await loadAvatarPreviews(latestPack.base_path);
+    const existingOriginalPath = await findExistingOriginalAvatarPath(supabase, resolvedFamilyId, userId);
+    setOriginalPhotoPath(existingOriginalPath);
+    if (existingOriginalPath) {
+      setOriginalPhotoUrl(await createSignedOriginalAvatarUrl(supabase, existingOriginalPath));
     } else {
-      setAvatarPreviews([]);
+      setOriginalPhotoUrl(null);
     }
 
     setLoadingRole(false);
-  }, [loadAvatarPreviews, supabase]);
+  }, [supabase]);
 
   useEffect(() => {
     void loadRole();
@@ -323,84 +277,119 @@ export function ProfileScreen() {
     setIsSavingCinematics(false);
   };
 
-  const generateAvatarPack = async () => {
-    if (!supabase || !familyId || !currentUserId) {
-      setAvatarError("Family profile is not ready yet.");
-      return;
-    }
-
-    setAvatarError(null);
-    setAvatarProgress(null);
-    setSettingsError(null);
-    setIsGeneratingAvatar(true);
-    try {
-      const { data: refreshData } = await supabase.auth.refreshSession();
-      let accessToken = refreshData.session?.access_token ?? null;
-
-      if (!accessToken) {
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) {
-          setAvatarError(sessionError.message);
-          return;
-        }
-
-        accessToken = sessionData.session?.access_token ?? null;
-      }
-
-      if (!accessToken) {
-        setAvatarError("Your session is invalid or expired. Please sign out and sign in again.");
+  const saveOriginalPhotoAsset = useCallback(
+    async (selectedAsset: { uri: string; mimeType?: string | null; fileName?: string | null; base64?: string | null }) => {
+      if (!supabase || !familyId || !currentUserId) {
+        setPhotoError("Family profile is not ready yet.");
         return;
       }
 
-      const invokeExpression = async (expression: (typeof AVATAR_EXPRESSIONS)[number]): Promise<string | null> => {
-        const requestBody = {
-          familyId,
-          userId: currentUserId,
-          styleId: selectedStyleId,
-          expressions: [expression],
-        };
+      setIsUploadingOriginalPhoto(true);
+      try {
+        const extension = resolveImageExtension(selectedAsset.mimeType, selectedAsset.fileName ?? null);
+        const storagePath = buildAvatarOriginalPath(familyId, currentUserId, extension);
+        let uploadBody: Blob | Uint8Array;
+        let contentType = selectedAsset.mimeType ?? "image/jpeg";
 
-        const { error } = await supabase.functions.invoke("avatar-generate-pack", {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: requestBody,
-        });
-
-        if (!error) {
-          return null;
+        if (selectedAsset.base64 && selectedAsset.base64.length > 0) {
+          uploadBody = decodeBase64ToBytes(selectedAsset.base64);
+        } else {
+          const imageResponse = await fetch(selectedAsset.uri);
+          const imageBlob = await imageResponse.blob();
+          uploadBody = imageBlob;
+          contentType = selectedAsset.mimeType ?? imageBlob.type ?? "image/jpeg";
         }
 
-        const resolvedMessage = await parseFunctionInvokeError(error as { message: string; context?: Response });
-        if (!resolvedMessage.toLowerCase().includes("invalid jwt")) {
-          return resolvedMessage;
-        }
+        const { error: uploadError } = await supabase.storage
+          .from("avatar-originals")
+          .upload(storagePath, uploadBody, {
+            contentType,
+            upsert: true,
+          });
 
-        const { error: retryError } = await supabase.functions.invoke("avatar-generate-pack", {
-          body: requestBody,
-        });
-
-        if (!retryError) {
-          return null;
-        }
-
-        return await parseFunctionInvokeError(retryError as { message: string; context?: Response });
-      };
-
-      for (const [index, expression] of AVATAR_EXPRESSIONS.entries()) {
-        setAvatarProgress(`Generating ${expression} (${index + 1}/${AVATAR_EXPRESSIONS.length})...`);
-        const invocationError = await invokeExpression(expression);
-        if (invocationError) {
-          setAvatarError(`Failed on ${expression}: ${invocationError}`);
+        if (uploadError) {
+          setPhotoError(uploadError.message);
           return;
         }
-      }
 
-      await loadRole();
-    } finally {
-      setAvatarProgress(null);
-      setIsGeneratingAvatar(false);
+        if (originalPhotoPath && originalPhotoPath !== storagePath) {
+          await supabase.storage.from("avatar-originals").remove([originalPhotoPath]);
+        }
+
+        setOriginalPhotoPath(storagePath);
+        setOriginalPhotoUrl(await createSignedOriginalAvatarUrl(supabase, storagePath));
+      } catch (error) {
+        setPhotoError(error instanceof Error ? error.message : "Failed to upload original photo");
+      } finally {
+        setIsUploadingOriginalPhoto(false);
+      }
+    },
+    [currentUserId, familyId, originalPhotoPath, supabase],
+  );
+
+  const uploadOriginalPhoto = async () => {
+    if (!supabase || !familyId || !currentUserId) {
+      setPhotoError("Family profile is not ready yet.");
+      return;
     }
+
+    setPhotoError(null);
+    setSettingsError(null);
+
+    const pickResult = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.9,
+      base64: true,
+    });
+
+    if (pickResult.canceled) {
+      return;
+    }
+
+    const selectedAsset = pickResult.assets[0];
+    if (!selectedAsset?.uri) {
+      setPhotoError("No image selected.");
+      return;
+    }
+
+    await saveOriginalPhotoAsset(selectedAsset);
+  };
+
+  const takeOriginalPhoto = async () => {
+    if (!supabase || !familyId || !currentUserId) {
+      setPhotoError("Family profile is not ready yet.");
+      return;
+    }
+
+    setPhotoError(null);
+    setSettingsError(null);
+
+    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permissionResult.granted) {
+      setPhotoError("Camera permission is required to take a profile photo.");
+      return;
+    }
+
+    const captureResult = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.9,
+      base64: true,
+    });
+
+    if (captureResult.canceled) {
+      return;
+    }
+
+    const selectedAsset = captureResult.assets[0];
+    if (!selectedAsset?.uri) {
+      setPhotoError("No photo captured.");
+      return;
+    }
+
+    await saveOriginalPhotoAsset(selectedAsset);
   };
 
   const createFamilyMember = async () => {
@@ -536,8 +525,9 @@ export function ProfileScreen() {
 
   return (
     <Screen>
-      <View style={[styles.content, { gap: spacing.md }]}>
+      <ScrollView contentContainerStyle={[styles.content, { gap: spacing.md, paddingBottom: spacing.xl }]}>
         <AppText variant="heading">Settings and Profile</AppText>
+
         <InfoCard>
           <AppText variant="title">Profile</AppText>
           <AppText muted>Set how your name appears in chat and game panels.</AppText>
@@ -559,6 +549,48 @@ export function ProfileScreen() {
         </InfoCard>
 
         <InfoCard>
+          <AppText variant="title">Profile Photo</AppText>
+          <AppText muted>Upload your original photo once. Avatars are generated from this reference.</AppText>
+
+          {originalPhotoUrl ? (
+            <Image source={{ uri: originalPhotoUrl }} style={[styles.profilePhoto, { borderColor: colors.border }]} />
+          ) : (
+            <View style={[styles.profilePhotoPlaceholder, { borderColor: colors.border, backgroundColor: colors.background }]}>
+              <AppText muted>No profile photo uploaded yet.</AppText>
+            </View>
+          )}
+
+          <PrimaryButton
+            onPress={() => {
+              void uploadOriginalPhoto();
+            }}
+            disabled={loadingRole || isUploadingOriginalPhoto || !familyId || !currentUserId}
+          >
+            {isUploadingOriginalPhoto ? "Uploading Photo..." : "Upload from Library"}
+          </PrimaryButton>
+
+          <PrimaryButton
+            onPress={() => {
+              void takeOriginalPhoto();
+            }}
+            disabled={loadingRole || isUploadingOriginalPhoto || !familyId || !currentUserId}
+          >
+            {isUploadingOriginalPhoto ? "Uploading Photo..." : originalPhotoPath ? "Take New Photo" : "Take Photo"}
+          </PrimaryButton>
+
+          <PrimaryButton
+            onPress={() => {
+              navigation.navigate("Avatars");
+            }}
+            disabled={loadingRole || !familyId || !currentUserId || !originalPhotoPath}
+          >
+            Avatars
+          </PrimaryButton>
+
+          {photoError ? <AppText muted>{photoError}</AppText> : null}
+        </InfoCard>
+
+        <InfoCard>
           <AppText variant="title">Cinematics</AppText>
           <View style={styles.toggleRow}>
             <AppText muted>Board camera effects for dice, snake, and ladder moments.</AppText>
@@ -573,94 +605,6 @@ export function ProfileScreen() {
           </View>
           {isSavingCinematics ? <AppText muted>Saving setting...</AppText> : null}
           {settingsError ? <AppText muted>{settingsError}</AppText> : null}
-        </InfoCard>
-
-        <InfoCard>
-          <AppText variant="title">Avatar Style</AppText>
-          <AppText muted>Pick one of 8 styles, then generate a 4-expression pack.</AppText>
-
-          <View style={[styles.styleGrid, { gap: spacing.sm }]}>
-            {AVATAR_STYLE_OPTIONS.map((style) => {
-              const selected = style.id === selectedStyleId;
-              return (
-                <Pressable
-                  key={style.id}
-                  onPress={() => {
-                    setSelectedStyleId(style.id);
-                    setAvatarError(null);
-                  }}
-                  style={[
-                    styles.styleChip,
-                    {
-                      borderColor: colors.border,
-                      backgroundColor: selected ? colors.primary : colors.background,
-                    },
-                  ]}
-                >
-                  <AppText style={{ color: selected ? "#ffffff" : colors.text }}>{style.label}</AppText>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <PrimaryButton
-            onPress={() => {
-              void generateAvatarPack();
-            }}
-            disabled={isGeneratingAvatar || loadingRole || !familyId || !currentUserId}
-          >
-            {isGeneratingAvatar ? "Generating Avatar Pack..." : "Generate Avatar Pack"}
-          </PrimaryButton>
-          {isGeneratingAvatar && avatarProgress ? <AppText muted>{avatarProgress}</AppText> : null}
-
-          {latestAvatarPack?.status === "ready" ? (
-            <View style={[styles.previewGrid, { gap: spacing.sm }]}>
-              {AVATAR_EXPRESSIONS.map((expression) => {
-                const preview = avatarPreviews.find((item) => item.expression === expression) ?? null;
-
-                return (
-                  <View key={expression} style={styles.previewCell}>
-                    {preview ? (
-                      <Image
-                        source={{ uri: preview.imageUrl }}
-                        style={[styles.previewImage, { borderColor: colors.border, backgroundColor: colors.background }]}
-                      />
-                    ) : (
-                      <View
-                        style={[
-                          styles.previewImage,
-                          styles.previewImagePlaceholder,
-                          { borderColor: colors.border, backgroundColor: colors.background },
-                        ]}
-                      >
-                        <AppText muted>Missing</AppText>
-                      </View>
-                    )}
-                    <AppText variant="caption" muted>
-                      {avatarExpressionLabel(expression)}
-                    </AppText>
-                  </View>
-                );
-              })}
-            </View>
-          ) : null}
-
-          {latestAvatarPack ? (
-            <View style={{ gap: 4 }}>
-              <AppText variant="caption" muted>
-                Latest avatar pack
-              </AppText>
-              <AppText muted>
-                Style: {latestAvatarPack.styleId} | v{latestAvatarPack.version}
-              </AppText>
-              <AppText muted>Status: {latestAvatarPack.status}</AppText>
-              <AppText muted>Updated: {new Date(latestAvatarPack.createdAt).toLocaleString()}</AppText>
-            </View>
-          ) : (
-            <AppText muted>No avatar pack generated yet.</AppText>
-          )}
-
-          {avatarError ? <AppText muted>{avatarError}</AppText> : null}
         </InfoCard>
 
         <InfoCard>
@@ -707,43 +651,30 @@ export function ProfileScreen() {
             </View>
           ) : null}
         </InfoCard>
-      </View>
+      </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   content: {
-    flex: 1,
+    flexGrow: 1,
   },
-  styleGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  styleChip: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  previewGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  previewCell: {
-    width: 80,
-    alignItems: "center",
-    gap: 4,
-  },
-  previewImage: {
-    width: 72,
-    height: 72,
-    borderRadius: 10,
+  profilePhoto: {
+    width: 180,
+    height: 180,
+    borderRadius: 14,
     borderWidth: 1,
   },
-  previewImagePlaceholder: {
+  profilePhotoPlaceholder: {
+    width: 220,
+    minHeight: 110,
+    borderRadius: 12,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   toggleRow: {
     flexDirection: "row",

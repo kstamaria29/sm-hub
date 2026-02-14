@@ -408,7 +408,7 @@ export function GamesScreen() {
               <AppText variant="title">Actions</AppText>
               <AppText muted>
                 {gameState.role === "admin"
-                  ? "Admins can start a game. Only the active player can roll."
+                  ? "Admins can start or end a game. Only the active player can roll."
                   : "Only admins can start a game. Roll is available on your turn."}
               </AppText>
 
@@ -433,6 +433,15 @@ export function GamesScreen() {
                 disabled={!gameState.canRoll || gameState.rolling || gameState.loading}
               >
                 {gameState.rolling ? "Rolling..." : "Roll Dice"}
+              </PrimaryButton>
+
+              <PrimaryButton
+                onPress={() => {
+                  void gameState.endGame();
+                }}
+                disabled={!gameState.canEndGame || gameState.endingGame || gameState.loading}
+              >
+                {gameState.endingGame ? "Ending Game..." : "End Game"}
               </PrimaryButton>
             </InfoCard>
 

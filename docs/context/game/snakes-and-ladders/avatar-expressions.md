@@ -20,3 +20,6 @@
 - Expressions are derived from server-confirmed events.
 - Expression art comes from avatar packs only (transparent PNGs).
 - Client does not invent new expression states.
+- Avatar generation is neutral-first in current UX:
+  - generate/confirm `neutral` first
+  - generate `happy`, `angry`, `crying` after neutral confirmation

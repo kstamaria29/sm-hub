@@ -49,6 +49,7 @@ export type FamilyGameState = {
   loading: boolean;
   startingGame: boolean;
   rolling: boolean;
+  endingGame: boolean;
   error: string | null;
   role: "admin" | "member" | null;
   roomTitle: string;
@@ -58,11 +59,13 @@ export type FamilyGameState = {
   events: GameEventView[];
   canStartGame: boolean;
   canRoll: boolean;
+  canEndGame: boolean;
   isMyTurn: boolean;
   currentUserId: string | null;
   refresh: () => Promise<void>;
   startGame: (playerUserIds?: string[]) => Promise<boolean>;
   rollMove: () => Promise<boolean>;
+  endGame: () => Promise<boolean>;
 };
 
 function formatFallbackUserLabel(userId: string): string {
@@ -187,6 +190,7 @@ export function useFamilyGame(): FamilyGameState {
   const [loading, setLoading] = useState(true);
   const [startingGame, setStartingGame] = useState(false);
   const [rolling, setRolling] = useState(false);
+  const [endingGame, setEndingGame] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [role, setRole] = useState<"admin" | "member" | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -620,6 +624,42 @@ export function useFamilyGame(): FamilyGameState {
     return true;
   }, [game, load, resolveAccessToken, supabase]);
 
+  const endGame = useCallback(async () => {
+    if (!supabase || !game || role !== "admin") {
+      return false;
+    }
+
+    setEndingGame(true);
+    setError(null);
+
+    const accessToken = await resolveAccessToken();
+    if (!accessToken) {
+      setError("Your session is invalid or expired. Please sign out and sign in again.");
+      setEndingGame(false);
+      return false;
+    }
+
+    const { error: invokeError } = await supabase.functions.invoke("game-end", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: {
+        gameId: game.id,
+        reason: "admin_end",
+      },
+    });
+
+    if (invokeError) {
+      setError(await parseFunctionInvokeError(invokeError as { message: string; context?: Response }));
+      setEndingGame(false);
+      return false;
+    }
+
+    await load();
+    setEndingGame(false);
+    return true;
+  }, [game, load, resolveAccessToken, role, supabase]);
+
   const isMyTurn = Boolean(
     game &&
       game.status === "active" &&
@@ -633,6 +673,7 @@ export function useFamilyGame(): FamilyGameState {
     loading,
     startingGame,
     rolling,
+    endingGame,
     error,
     role,
     roomTitle,
@@ -642,10 +683,12 @@ export function useFamilyGame(): FamilyGameState {
     events,
     canStartGame: role === "admin" && gameRoomId !== null && game === null,
     canRoll: Boolean(game && game.status === "active" && isMyTurn),
+    canEndGame: Boolean(game && role === "admin" && (game.status === "active" || game.status === "pending")),
     isMyTurn,
     currentUserId,
     refresh: load,
     startGame,
     rollMove,
+    endGame,
   };
 }

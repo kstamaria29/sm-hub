@@ -12,6 +12,7 @@
   "include": [
     "App.tsx",
     "index.ts",
+    "src/**/*.d.ts",
     "src/**/*.ts",
     "src/**/*.tsx"
   ]

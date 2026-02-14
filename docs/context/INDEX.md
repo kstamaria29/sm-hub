@@ -5,6 +5,7 @@ This file is the context registry for v1. Start here before editing product, gam
 ## Product
 
 - `docs/context/product/PRD.md` - v1 scope, non-goals, and acceptance criteria
+- `docs/context/product/v1-implementation-status.md` - implemented features snapshot, temporary deviations, and next implementation steps
 
 ## Game: Snakes & Ladders
 

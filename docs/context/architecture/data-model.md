@@ -28,3 +28,10 @@
 
 - All family-visible rows carry `family_id` for RLS scoping.
 - Authoritative game state mutations are done in Edge Functions, not direct client writes.
+- Key authoritative game event types in current flow:
+  - `game_started`
+  - `roll_move`
+  - `game_ended`
+- Public RPC wrapper functions are exposed for PostgREST/Edge invocation and delegate to `app.*` functions with hardened execution context.
+- `user_profiles.cinematics_enabled` controls cinematic camera behavior in game rendering.
+- Avatar originals are stored in Storage bucket `avatar-originals` under `<family_id>/<user_id>/original.<ext>`.

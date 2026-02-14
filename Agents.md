@@ -10,6 +10,28 @@ We are building a private, admin-managed family app (8-10 members, ages 30-65) f
 - Snakes & Ladders (turn-based, authoritative state)
 - Cartoon avatar packs (transparent PNG) used as game tokens
 
+Current implementation snapshot:
+
+- Onboarding supports email/password `Create Account` + `Sign In`, then `Create Family`.
+- Family creation runs through Edge Function `family-bootstrap`.
+- Admin member creation runs through Edge Function `family-member-create` and returns temporary credentials.
+- Chat room is functional with realtime message timeline.
+- Games screen supports:
+  - authoritative game start (`game-start`)
+  - authoritative roll/move (`game-roll-move`)
+  - authoritative game end (`game-end`)
+  - board grid rendering, event banners, and expression-aware player tokens
+- Settings/Profile supports:
+  - display name updates
+  - cinematics toggle
+  - original profile photo upload from library or camera
+  - navigation into Avatars flow
+- Avatars flow is two-step:
+  - step 1 generate/regenerate neutral preview from original photo
+  - step 2 confirm neutral and generate remaining expressions (`happy`, `angry`, `crying`) sequentially
+- Avatar preview grid is implemented and shows per-expression status.
+- Temporary testing mode is enabled: one-player game start is currently allowed.
+
 Out of scope for v1:
 
 - Photo sharing / albums
@@ -47,7 +69,7 @@ Out of scope for v1:
   - Postgres (source of truth)
   - Row Level Security (RLS) for family-only data access
   - Realtime (chat + game room state updates)
-  - Edge Functions (server-authoritative actions: dice roll / move validation, avatar generation orchestration, member provisioning)
+  - Edge Functions (server-authoritative actions: family bootstrap, member provisioning, game start, roll/move, game end, avatar generation orchestration)
   - Storage (avatar originals optional; cartoon avatar pack PNGs required)
 
 ### OpenAI
@@ -91,7 +113,7 @@ Out of scope for v1:
 
 Buckets:
 
-- `avatar-originals` (optional)
+- `avatar-originals` (required for avatar generation flow)
 - `avatar-packs` (required; transparent PNG pack outputs)
 
 Avatar pack paths (REQUIRED):
@@ -109,7 +131,7 @@ Access rules (avatars)
 
 - Read: authenticated users who are members of the same family
 - Write/replace:
-  - avatar-originals: the user themself (and optionally admin)
+  - avatar-originals: the user themself (admin access may be policy-enabled)
   - avatar-packs: **Edge Functions only** (server-generated). Direct client writes are not allowed.
 
 ## Animations (v1) - REQUIRED
@@ -154,13 +176,17 @@ Access rules (avatars)
 ## Avatar pack requirements
 
 Avatar setup flow:
-Upload photo -> Crop face -> Choose 1 of 8 styles -> Generate pack -> Preview -> Save
+Upload/take photo -> Choose 1 of 8 styles -> Generate neutral preview -> Confirm neutral -> Generate happy/angry/crying -> Preview pack
 
 Generation outputs:
 
 - 4 transparent PNGs: neutral, happy, angry, crying
 - Consistent crop/scale across all 4
 - Store as an "Avatar Pack" with an active version per user
+
+Current implementation note:
+
+- Expression generation after neutral currently runs one expression per request to reduce function compute pressure.
 
 In-game expressions:
 
@@ -206,3 +232,11 @@ Every task response must end with:
 **Verification:**
 
 - ...
+
+## Immediate next steps (v1)
+
+1. Re-enable minimum two-player requirement when multiplayer testing is complete (replace temporary one-player mode).
+2. Add explicit avatar approval/activation UX after full pack generation.
+3. Improve avatar generation reliability (retry/backoff + clearer progress/error states).
+4. Add automated tests for critical RPCs (`start_game_v1`, `roll_game_turn_v1`, `end_game_v1`, avatar reserve/generate flow).
+5. Add deployment runbook checks for function secrets and migration drift.
