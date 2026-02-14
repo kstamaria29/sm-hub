@@ -1,4 +1,5 @@
-import { Image, RefreshControl, ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
+import { useEffect, useState } from "react";
+import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
 
 import { avatarExpressionLabel } from "../features/avatar/avatarPack";
 import { buildClassicBoardCells } from "../features/game/board";
@@ -146,6 +147,7 @@ export function GamesScreen() {
   const { width, height } = useWindowDimensions();
   const gameState = useFamilyGame();
   const isLandscape = width > height;
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
 
   const currentTurnLabel = (() => {
     if (gameState.game?.status === "finished") {
@@ -171,6 +173,41 @@ export function GamesScreen() {
   }
   const latestEvent = gameState.events[0] ?? null;
   const eventBanner = resolveEventBanner(latestEvent, playerNameById);
+  const hasSelectablePlayers = gameState.familyMembers.length > 0;
+
+  useEffect(() => {
+    if (gameState.game) {
+      setSelectedPlayerIds([]);
+      return;
+    }
+
+    const availableIds = gameState.familyMembers.map((member) => member.userId);
+    if (availableIds.length === 0) {
+      setSelectedPlayerIds([]);
+      return;
+    }
+
+    setSelectedPlayerIds((current) => {
+      const availableSet = new Set(availableIds);
+      const filtered = current.filter((id) => availableSet.has(id));
+      if (filtered.length > 0) {
+        return filtered;
+      }
+
+      return availableIds;
+    });
+  }, [gameState.familyMembers, gameState.game]);
+
+  const toggleSelectedPlayer = (userId: string) => {
+    setSelectedPlayerIds((current) => {
+      if (current.includes(userId)) {
+        return current.filter((id) => id !== userId);
+      }
+
+      return [...current, userId];
+    });
+  };
+
   const eventBannerColors = (() => {
     if (!eventBanner) {
       return {
@@ -328,7 +365,45 @@ export function GamesScreen() {
             </InfoCard>
           </View>
 
-          <View style={[styles.sideColumn, { gap: spacing.md }]}>
+          <View style={[styles.sideColumn, isLandscape && styles.sideColumnLandscape, { gap: spacing.md }]}>
+            {!gameState.game && gameState.role === "admin" ? (
+              <InfoCard>
+                <AppText variant="title">Player Selection</AppText>
+                <AppText muted>Select players to include in this game.</AppText>
+                {hasSelectablePlayers ? (
+                  <View style={[styles.selectionGrid, { gap: spacing.sm }]}>
+                    {gameState.familyMembers.map((member) => {
+                      const selected = selectedPlayerIds.includes(member.userId);
+
+                      return (
+                        <Pressable
+                          key={member.userId}
+                          onPress={() => {
+                            toggleSelectedPlayer(member.userId);
+                          }}
+                          style={[
+                            styles.selectionChip,
+                            {
+                              borderColor: colors.border,
+                              backgroundColor: selected ? colors.primary : colors.background,
+                            },
+                          ]}
+                        >
+                          <AppText style={{ color: selected ? "#ffffff" : colors.text }}>{member.displayName}</AppText>
+                          <AppText variant="caption" style={{ color: selected ? "#ffffff" : colors.textMuted }}>
+                            {member.role}
+                          </AppText>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <AppText muted>No active family members available for selection.</AppText>
+                )}
+                <AppText muted>Selected: {selectedPlayerIds.length}</AppText>
+              </InfoCard>
+            ) : null}
+
             <InfoCard>
               <AppText variant="title">Actions</AppText>
               <AppText muted>
@@ -339,9 +414,14 @@ export function GamesScreen() {
 
               <PrimaryButton
                 onPress={() => {
-                  void gameState.startGame();
+                  void gameState.startGame(selectedPlayerIds);
                 }}
-                disabled={!gameState.canStartGame || gameState.startingGame || gameState.loading}
+                disabled={
+                  !gameState.canStartGame ||
+                  gameState.startingGame ||
+                  gameState.loading ||
+                  (gameState.role === "admin" && selectedPlayerIds.length === 0)
+                }
               >
                 {gameState.startingGame ? "Starting Game..." : "Start New Game"}
               </PrimaryButton>
@@ -417,7 +497,7 @@ export function GamesScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    flex: 1,
+    flexGrow: 1,
   },
   layout: {
     flexDirection: "column",
@@ -427,13 +507,28 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   boardColumn: {
-    flexGrow: 1,
+    width: "100%",
   },
   boardColumnLandscape: {
     flex: 1.2,
   },
   sideColumn: {
-    flexGrow: 1,
+    width: "100%",
+  },
+  sideColumnLandscape: {
+    flex: 1,
+  },
+  selectionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  selectionChip: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    minWidth: 110,
+    gap: 2,
   },
   eventBanner: {
     borderWidth: 1,

@@ -87,6 +87,9 @@ export function ProfileScreen() {
   const [role, setRole] = useState<"admin" | "member" | null>(null);
   const [loadingRole, setLoadingRole] = useState(true);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [profileDisplayName, setProfileDisplayName] = useState("");
+  const [savedDisplayName, setSavedDisplayName] = useState("");
+  const [isSavingDisplayName, setIsSavingDisplayName] = useState(false);
   const [cinematicsEnabled, setCinematicsEnabled] = useState(true);
   const [isSavingCinematics, setIsSavingCinematics] = useState(false);
   const [selectedStyleId, setSelectedStyleId] = useState<string>(AVATAR_STYLE_OPTIONS[0].id);
@@ -158,6 +161,8 @@ export function ProfileScreen() {
       setLoadingRole(false);
       setRole(null);
       setFamilyId(null);
+      setProfileDisplayName("");
+      setSavedDisplayName("");
       setLatestAvatarPack(null);
       setAvatarPreviews([]);
       return;
@@ -165,7 +170,7 @@ export function ProfileScreen() {
 
     const { data: profileData, error: profileError } = await supabase
       .from("user_profiles")
-      .select("family_id,cinematics_enabled,avatar_style_id")
+      .select("family_id,cinematics_enabled,avatar_style_id,display_name")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -179,12 +184,17 @@ export function ProfileScreen() {
       setLoadingRole(false);
       setRole(null);
       setFamilyId(null);
+      setProfileDisplayName("");
+      setSavedDisplayName("");
       setLatestAvatarPack(null);
       setAvatarPreviews([]);
       return;
     }
 
     setFamilyId(profileData.family_id);
+    const loadedDisplayName = profileData.display_name ?? "";
+    setProfileDisplayName(loadedDisplayName);
+    setSavedDisplayName(loadedDisplayName);
     setCinematicsEnabled(profileData.cinematics_enabled ?? true);
     if (profileData.avatar_style_id) {
       setSelectedStyleId(profileData.avatar_style_id);
@@ -253,6 +263,38 @@ export function ProfileScreen() {
   useEffect(() => {
     void loadRole();
   }, [loadRole]);
+
+  const persistDisplayName = async () => {
+    if (!supabase || !familyId || !currentUserId) {
+      setSettingsError("Family profile is not ready yet.");
+      return;
+    }
+
+    setIsSavingDisplayName(true);
+    setSettingsError(null);
+
+    const nextDisplayName = profileDisplayName.trim();
+    const { error } = await supabase
+      .from("user_profiles")
+      .upsert(
+        {
+          user_id: currentUserId,
+          family_id: familyId,
+          display_name: nextDisplayName.length > 0 ? nextDisplayName : null,
+        },
+        { onConflict: "user_id" },
+      );
+
+    if (error) {
+      setSettingsError(error.message);
+      setIsSavingDisplayName(false);
+      return;
+    }
+
+    setSavedDisplayName(nextDisplayName);
+    setProfileDisplayName(nextDisplayName);
+    setIsSavingDisplayName(false);
+  };
 
   const persistCinematics = async (nextValue: boolean) => {
     if (!supabase || !familyId || !currentUserId) {
@@ -488,11 +530,34 @@ export function ProfileScreen() {
     paddingVertical: spacing.sm,
     backgroundColor: colors.background,
   } as const;
+  const normalizedProfileDisplayName = profileDisplayName.trim();
+  const normalizedSavedDisplayName = savedDisplayName.trim();
+  const isDisplayNameDirty = normalizedProfileDisplayName !== normalizedSavedDisplayName;
 
   return (
     <Screen>
       <View style={[styles.content, { gap: spacing.md }]}>
         <AppText variant="heading">Settings and Profile</AppText>
+        <InfoCard>
+          <AppText variant="title">Profile</AppText>
+          <AppText muted>Set how your name appears in chat and game panels.</AppText>
+          <TextInput
+            placeholder="Display name"
+            placeholderTextColor={colors.textMuted}
+            value={profileDisplayName}
+            onChangeText={setProfileDisplayName}
+            style={inputStyle}
+          />
+          <PrimaryButton
+            onPress={() => {
+              void persistDisplayName();
+            }}
+            disabled={isSavingDisplayName || loadingRole || !isDisplayNameDirty}
+          >
+            {isSavingDisplayName ? "Saving Name..." : "Save Display Name"}
+          </PrimaryButton>
+        </InfoCard>
+
         <InfoCard>
           <AppText variant="title">Cinematics</AppText>
           <View style={styles.toggleRow}>

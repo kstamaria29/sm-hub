@@ -38,6 +38,12 @@ export type GameEventView = {
   createdBy: string | null;
 };
 
+export type FamilyMemberOption = {
+  userId: string;
+  role: "admin" | "member";
+  displayName: string;
+};
+
 export type FamilyGameState = {
   configured: boolean;
   loading: boolean;
@@ -47,6 +53,7 @@ export type FamilyGameState = {
   role: "admin" | "member" | null;
   roomTitle: string;
   game: GameRow | null;
+  familyMembers: FamilyMemberOption[];
   players: GamePlayerView[];
   events: GameEventView[];
   canStartGame: boolean;
@@ -54,7 +61,7 @@ export type FamilyGameState = {
   isMyTurn: boolean;
   currentUserId: string | null;
   refresh: () => Promise<void>;
-  startGame: () => Promise<boolean>;
+  startGame: (playerUserIds?: string[]) => Promise<boolean>;
   rollMove: () => Promise<boolean>;
 };
 
@@ -187,6 +194,7 @@ export function useFamilyGame(): FamilyGameState {
   const [gameRoomId, setGameRoomId] = useState<string | null>(null);
   const [roomTitle, setRoomTitle] = useState("Snakes and Ladders");
   const [game, setGame] = useState<GameRow | null>(null);
+  const [familyMembers, setFamilyMembers] = useState<FamilyMemberOption[]>([]);
   const [players, setPlayers] = useState<GamePlayerView[]>([]);
   const [events, setEvents] = useState<GameEventView[]>([]);
 
@@ -194,6 +202,7 @@ export function useFamilyGame(): FamilyGameState {
     if (!supabase || !isSupabaseConfigured) {
       setLoading(false);
       setError("Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to enable games.");
+      setFamilyMembers([]);
       return;
     }
 
@@ -204,6 +213,7 @@ export function useFamilyGame(): FamilyGameState {
     if (sessionError) {
       setLoading(false);
       setError(sessionError.message);
+      setFamilyMembers([]);
       return;
     }
 
@@ -211,6 +221,7 @@ export function useFamilyGame(): FamilyGameState {
     if (!sessionUser) {
       setLoading(false);
       setError("Sign in is required before games can load.");
+      setFamilyMembers([]);
       return;
     }
 
@@ -225,12 +236,14 @@ export function useFamilyGame(): FamilyGameState {
     if (profileError) {
       setLoading(false);
       setError(profileError.message);
+      setFamilyMembers([]);
       return;
     }
 
     if (!profile?.family_id) {
       setLoading(false);
       setError("No family found for this user profile.");
+      setFamilyMembers([]);
       return;
     }
 
@@ -246,10 +259,53 @@ export function useFamilyGame(): FamilyGameState {
     if (membershipError || !membership || membership.status !== "active") {
       setLoading(false);
       setError(membershipError?.message ?? "No active family membership found.");
+      setFamilyMembers([]);
       return;
     }
 
     setRole(membership.role === "admin" ? "admin" : "member");
+
+    const { data: activeMembersData, error: activeMembersError } = await supabase
+      .from("family_members")
+      .select("user_id,role")
+      .eq("family_id", profile.family_id)
+      .eq("status", "active")
+      .order("joined_at", { ascending: true });
+
+    if (activeMembersError) {
+      setLoading(false);
+      setError(activeMembersError.message);
+      return;
+    }
+
+    const activeMembers = (activeMembersData ?? []) as Pick<Database["public"]["Tables"]["family_members"]["Row"], "user_id" | "role">[];
+    const activeMemberUserIds = activeMembers.map((entry) => entry.user_id);
+    let activeMemberNames: Pick<Database["public"]["Tables"]["user_profiles"]["Row"], "user_id" | "display_name">[] = [];
+    if (activeMemberUserIds.length > 0) {
+      const { data: activeMemberProfiles, error: activeMemberProfilesError } = await supabase
+        .from("user_profiles")
+        .select("user_id,display_name")
+        .eq("family_id", profile.family_id)
+        .in("user_id", activeMemberUserIds);
+
+      if (activeMemberProfilesError) {
+        setLoading(false);
+        setError(activeMemberProfilesError.message);
+        return;
+      }
+
+      activeMemberNames =
+        (activeMemberProfiles ?? []) as Pick<Database["public"]["Tables"]["user_profiles"]["Row"], "user_id" | "display_name">[];
+    }
+
+    const activeMemberNamesByUserId = new Map(activeMemberNames.map((entry) => [entry.user_id, entry.display_name]));
+    setFamilyMembers(
+      activeMembers.map((entry) => ({
+        userId: entry.user_id,
+        role: entry.role === "admin" ? "admin" : "member",
+        displayName: activeMemberNamesByUserId.get(entry.user_id) ?? formatFallbackUserLabel(entry.user_id),
+      })),
+    );
 
     const { data: room, error: roomError } = await supabase
       .from("rooms")
@@ -492,7 +548,7 @@ export function useFamilyGame(): FamilyGameState {
     return accessToken;
   }, [supabase]);
 
-  const startGame = useCallback(async () => {
+  const startGame = useCallback(async (playerUserIds?: string[]) => {
     if (!supabase || !gameRoomId || role !== "admin") {
       return false;
     }
@@ -513,6 +569,7 @@ export function useFamilyGame(): FamilyGameState {
       },
       body: {
         roomId: gameRoomId,
+        ...(playerUserIds && playerUserIds.length > 0 ? { playerUserIds } : {}),
       },
     });
 
@@ -580,6 +637,7 @@ export function useFamilyGame(): FamilyGameState {
     role,
     roomTitle,
     game,
+    familyMembers,
     players,
     events,
     canStartGame: role === "admin" && gameRoomId !== null && game === null,
