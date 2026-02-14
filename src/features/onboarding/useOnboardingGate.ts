@@ -17,21 +17,19 @@ export type OnboardingGateState = {
   session: Session | null;
   profile: UserProfile | null;
   error: string | null;
-  isSendingOtp: boolean;
-  isVerifyingOtp: boolean;
+  isSigningUp: boolean;
+  isSigningIn: boolean;
   isCreatingFamily: boolean;
-  isJoiningFamily: boolean;
   isSigningOut: boolean;
-  sendEmailOtp: (email: string) => Promise<boolean>;
-  verifyEmailOtp: (email: string, otpCode: string) => Promise<boolean>;
+  signUpWithEmail: (email: string, password: string) => Promise<boolean>;
+  signInWithEmail: (email: string, password: string) => Promise<boolean>;
   createFamily: (familyName: string, displayName?: string) => Promise<boolean>;
-  joinFamily: (inviteToken: string, displayName?: string) => Promise<boolean>;
   signOut: () => Promise<boolean>;
   clearError: () => void;
   refresh: () => Promise<void>;
 };
 
-type ActionState = "send_otp" | "verify_otp" | "create_family" | "join_family" | "sign_out" | null;
+type ActionState = "sign_up" | "sign_in" | "create_family" | "sign_out" | null;
 
 function toErrorMessage(error: unknown, fallback = "Something went wrong"): string {
   if (error instanceof Error && error.message.trim().length > 0) {
@@ -50,6 +48,41 @@ function toErrorMessage(error: unknown, fallback = "Something went wrong"): stri
   }
 
   return fallback;
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+async function parseFunctionInvokeError(error: { message: string; context?: Response }): Promise<string> {
+  const context = error.context;
+  if (!context) {
+    return error.message;
+  }
+
+  try {
+    const payload = (await context.clone().json()) as { error?: unknown; message?: unknown };
+    if (typeof payload.error === "string" && payload.error.trim().length > 0) {
+      return payload.error;
+    }
+
+    if (typeof payload.message === "string" && payload.message.trim().length > 0) {
+      return payload.message;
+    }
+  } catch {
+    // Fall through to raw text parsing.
+  }
+
+  try {
+    const text = await context.text();
+    if (text.trim().length > 0) {
+      return text;
+    }
+  } catch {
+    // Fall through to default message.
+  }
+
+  return error.message;
 }
 
 export function useOnboardingGate(): OnboardingGateState {
@@ -160,9 +193,10 @@ export function useOnboardingGate(): OnboardingGateState {
     }
   }, []);
 
-  const sendEmailOtp = useCallback(
-    async (email: string) => {
-      const normalizedEmail = email.trim().toLowerCase();
+  const signUpWithEmail = useCallback(
+    async (email: string, password: string) => {
+      const normalizedEmail = normalizeEmail(email);
+      const normalizedPassword = password.trim();
 
       if (!supabase || !isSupabaseConfigured) {
         setError("Supabase environment is not configured.");
@@ -174,16 +208,36 @@ export function useOnboardingGate(): OnboardingGateState {
         return false;
       }
 
-      return runAction("send_otp", async () => {
-        const { error: otpError } = await supabase.auth.signInWithOtp({
+      if (normalizedPassword.length < 8) {
+        setError("Password must be at least 8 characters.");
+        return false;
+      }
+
+      return runAction("sign_up", async () => {
+        const { error: signUpError } = await supabase.auth.signUp({
           email: normalizedEmail,
-          options: {
-            shouldCreateUser: true,
-          },
+          password: normalizedPassword,
         });
 
-        if (otpError) {
-          setError(otpError.message);
+        if (signUpError) {
+          setError(signUpError.message);
+          return false;
+        }
+
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: normalizedEmail,
+          password: normalizedPassword,
+        });
+
+        if (signInError) {
+          if (signInError.message.toLowerCase().includes("email not confirmed")) {
+            setError(
+              "Account created, but email confirmation is enabled in Supabase Auth. Disable confirmation for local testing.",
+            );
+            return false;
+          }
+
+          setError(signInError.message);
           return false;
         }
 
@@ -193,30 +247,34 @@ export function useOnboardingGate(): OnboardingGateState {
     [runAction, supabase],
   );
 
-  const verifyEmailOtp = useCallback(
-    async (email: string, otpCode: string) => {
-      const normalizedEmail = email.trim().toLowerCase();
-      const normalizedOtp = otpCode.trim();
+  const signInWithEmail = useCallback(
+    async (email: string, password: string) => {
+      const normalizedEmail = normalizeEmail(email);
+      const normalizedPassword = password.trim();
 
       if (!supabase || !isSupabaseConfigured) {
         setError("Supabase environment is not configured.");
         return false;
       }
 
-      if (normalizedEmail.length === 0 || normalizedOtp.length === 0) {
-        setError("Email and OTP code are required.");
+      if (normalizedEmail.length === 0) {
+        setError("Email is required.");
         return false;
       }
 
-      return runAction("verify_otp", async () => {
-        const { error: verifyError } = await supabase.auth.verifyOtp({
+      if (normalizedPassword.length < 8) {
+        setError("Password must be at least 8 characters.");
+        return false;
+      }
+
+      return runAction("sign_in", async () => {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
           email: normalizedEmail,
-          token: normalizedOtp,
-          type: "email",
+          password: normalizedPassword,
         });
 
-        if (verifyError) {
-          setError(verifyError.message);
+        if (signInError) {
+          setError(signInError.message);
           return false;
         }
 
@@ -248,56 +306,65 @@ export function useOnboardingGate(): OnboardingGateState {
       }
 
       return runAction("create_family", async () => {
-        const { error: invokeError } = await supabase.functions.invoke("family-bootstrap", {
-          body: {
-            familyName: normalizedFamilyName,
-            displayName: normalizedDisplayName.length > 0 ? normalizedDisplayName : undefined,
-          },
-        });
+        const { data: refreshData } = await supabase.auth.refreshSession();
+        let accessToken = refreshData.session?.access_token ?? null;
 
-        if (invokeError) {
-          setError(invokeError.message);
+        if (!accessToken) {
+          const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+          if (sessionError) {
+            setError(sessionError.message);
+            return false;
+          }
+
+          accessToken = sessionData.session?.access_token ?? null;
+        }
+
+        if (!accessToken) {
+          setError("Your session is invalid or expired. Please sign out and sign in again.");
           return false;
         }
 
-        await loadProfileForUser(actorUserId);
-        return true;
-      });
-    },
-    [loadProfileForUser, runAction, session?.user?.id, supabase],
-  );
+        const { data: currentUserData, error: currentUserError } = await supabase.auth.getUser(accessToken);
+        if (currentUserError || !currentUserData.user) {
+          setError("Session token could not be verified. Sign out and sign in again.");
+          return false;
+        }
 
-  const joinFamily = useCallback(
-    async (inviteToken: string, displayName?: string) => {
-      const normalizedInviteToken = inviteToken.trim();
-      const normalizedDisplayName = displayName?.trim() ?? "";
-      const actorUserId = session?.user?.id ?? null;
+        const requestBody = {
+          familyName: normalizedFamilyName,
+          displayName: normalizedDisplayName.length > 0 ? normalizedDisplayName : undefined,
+        };
 
-      if (!supabase || !isSupabaseConfigured) {
-        setError("Supabase environment is not configured.");
-        return false;
-      }
-
-      if (!actorUserId) {
-        setError("You must be signed in to join a family.");
-        return false;
-      }
-
-      if (normalizedInviteToken.length === 0) {
-        setError("Invite token is required.");
-        return false;
-      }
-
-      return runAction("join_family", async () => {
-        const { error: invokeError } = await supabase.functions.invoke("invite-accept", {
-          body: {
-            token: normalizedInviteToken,
-            displayName: normalizedDisplayName.length > 0 ? normalizedDisplayName : undefined,
+        const { error: invokeError } = await supabase.functions.invoke("family-bootstrap", {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
           },
+          body: requestBody,
         });
 
         if (invokeError) {
-          setError(invokeError.message);
+          const resolvedMessage = await parseFunctionInvokeError(invokeError as { message: string; context?: Response });
+          if (resolvedMessage.toLowerCase().includes("invalid jwt")) {
+            const { error: retryError } = await supabase.functions.invoke("family-bootstrap", {
+              body: requestBody,
+            });
+
+            if (!retryError) {
+              await loadProfileForUser(actorUserId);
+              return true;
+            }
+
+            const retryMessage = await parseFunctionInvokeError(retryError as { message: string; context?: Response });
+            if (retryMessage.toLowerCase().includes("invalid jwt")) {
+              const identity = currentUserData.user.email ?? currentUserData.user.id;
+              setError(
+                `JWT rejected by Functions gateway for ${identity}. Check .env.local Supabase URL/anon key pair, then restart Expo with \`npx expo start -c\` and sign in again.`,
+              );
+              return false;
+            }
+          }
+
+          setError(resolvedMessage);
           return false;
         }
 
@@ -355,15 +422,13 @@ export function useOnboardingGate(): OnboardingGateState {
     session,
     profile,
     error,
-    isSendingOtp: actionState === "send_otp",
-    isVerifyingOtp: actionState === "verify_otp",
+    isSigningUp: actionState === "sign_up",
+    isSigningIn: actionState === "sign_in",
     isCreatingFamily: actionState === "create_family",
-    isJoiningFamily: actionState === "join_family",
     isSigningOut: actionState === "sign_out",
-    sendEmailOtp,
-    verifyEmailOtp,
+    signUpWithEmail,
+    signInWithEmail,
     createFamily,
-    joinFamily,
     signOut,
     clearError: () => setError(null),
     refresh,

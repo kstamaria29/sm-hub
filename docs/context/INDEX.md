@@ -25,3 +25,4 @@ This file is the context registry for v1. Start here before editing product, gam
 - `docs/context/adr/0001-tech-stack-supabase.md` - Expo + Supabase adoption
 - `docs/context/adr/0002-authoritative-game-moves.md` - edge functions as authoritative move executor
 - `docs/context/adr/0003-fixed-board-mapping-v1.md` - single classic mapping in v1
+- `docs/context/adr/0004-admin-provisioned-membership.md` - email/password auth and admin-created members

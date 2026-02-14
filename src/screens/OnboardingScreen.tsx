@@ -16,18 +16,10 @@ export function OnboardingScreen({ gate }: OnboardingScreenProps) {
   const { colors, radius, spacing } = useTheme();
 
   const [email, setEmail] = useState(gate.session?.user?.email ?? "");
-  const [otpCode, setOtpCode] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
+  const [password, setPassword] = useState("");
 
   const [displayName, setDisplayName] = useState(gate.profile?.display_name ?? "");
   const [familyName, setFamilyName] = useState("");
-  const [inviteToken, setInviteToken] = useState("");
-
-  useEffect(() => {
-    if (gate.session?.user?.email && email.trim().length === 0) {
-      setEmail(gate.session.user.email);
-    }
-  }, [email, gate.session?.user?.email]);
 
   useEffect(() => {
     if (gate.profile?.display_name && displayName.trim().length === 0) {
@@ -65,8 +57,8 @@ export function OnboardingScreen({ gate }: OnboardingScreenProps) {
 
   const renderAuth = () => (
     <InfoCard>
-      <AppText variant="title">Sign In With Email OTP</AppText>
-      <AppText muted>Enter your email to receive a one-time code.</AppText>
+      <AppText variant="title">Admin Sign In</AppText>
+      <AppText muted>Use email and password. If this is your first time, create account first.</AppText>
 
       <TextInput
         autoCapitalize="none"
@@ -82,46 +74,37 @@ export function OnboardingScreen({ gate }: OnboardingScreenProps) {
         }}
       />
 
+      <TextInput
+        autoCapitalize="none"
+        autoCorrect={false}
+        secureTextEntry
+        placeholder="Password (min 8 chars)"
+        placeholderTextColor={colors.textMuted}
+        style={inputStyle}
+        value={password}
+        onChangeText={(value) => {
+          gate.clearError();
+          setPassword(value);
+        }}
+      />
+
       <PrimaryButton
         onPress={() => {
-          void (async () => {
-            const sent = await gate.sendEmailOtp(email);
-            if (sent) {
-              setOtpSent(true);
-            }
-          })();
+          void gate.signUpWithEmail(email, password);
         }}
-        disabled={gate.isSendingOtp || email.trim().length === 0}
+        disabled={gate.isSigningUp || email.trim().length === 0 || password.trim().length < 8}
       >
-        {gate.isSendingOtp ? "Sending Code..." : "Send Code"}
+        {gate.isSigningUp ? "Creating Account..." : "Create Account"}
       </PrimaryButton>
 
-      {otpSent ? (
-        <View style={{ gap: spacing.sm }}>
-          <AppText muted>Paste the OTP code from your email.</AppText>
-          <TextInput
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="number-pad"
-            placeholder="OTP code"
-            placeholderTextColor={colors.textMuted}
-            style={inputStyle}
-            value={otpCode}
-            onChangeText={(value) => {
-              gate.clearError();
-              setOtpCode(value);
-            }}
-          />
-          <PrimaryButton
-            onPress={() => {
-              void gate.verifyEmailOtp(email, otpCode);
-            }}
-            disabled={gate.isVerifyingOtp || otpCode.trim().length === 0}
-          >
-            {gate.isVerifyingOtp ? "Verifying..." : "Verify Code"}
-          </PrimaryButton>
-        </View>
-      ) : null}
+      <PrimaryButton
+        onPress={() => {
+          void gate.signInWithEmail(email, password);
+        }}
+        disabled={gate.isSigningIn || email.trim().length === 0 || password.trim().length < 8}
+      >
+        {gate.isSigningIn ? "Signing In..." : "Sign In"}
+      </PrimaryButton>
     </InfoCard>
   );
 
@@ -162,41 +145,6 @@ export function OnboardingScreen({ gate }: OnboardingScreenProps) {
           disabled={gate.isCreatingFamily || familyName.trim().length === 0}
         >
           {gate.isCreatingFamily ? "Creating..." : "Create Family"}
-        </PrimaryButton>
-      </InfoCard>
-
-      <InfoCard>
-        <AppText variant="title">Join By Invite</AppText>
-        <AppText muted>Use the invite token from your family owner/admin.</AppText>
-        <TextInput
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="Invite token"
-          placeholderTextColor={colors.textMuted}
-          style={inputStyle}
-          value={inviteToken}
-          onChangeText={(value) => {
-            gate.clearError();
-            setInviteToken(value);
-          }}
-        />
-        <TextInput
-          placeholder="Display name (optional)"
-          placeholderTextColor={colors.textMuted}
-          style={inputStyle}
-          value={displayName}
-          onChangeText={(value) => {
-            gate.clearError();
-            setDisplayName(value);
-          }}
-        />
-        <PrimaryButton
-          onPress={() => {
-            void gate.joinFamily(inviteToken, displayName);
-          }}
-          disabled={gate.isJoiningFamily || inviteToken.trim().length === 0}
-        >
-          {gate.isJoiningFamily ? "Joining..." : "Join Family"}
         </PrimaryButton>
       </InfoCard>
 

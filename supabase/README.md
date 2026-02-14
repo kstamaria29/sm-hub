@@ -8,8 +8,9 @@ Run SQL manually in the Supabase Dashboard SQL Editor in this exact order:
 
 1. `supabase/migrations/202602140001_initial_schema.sql`
 2. `supabase/migrations/202602140002_transactions_and_hardening.sql`
-3. `supabase/storage/001_avatar_buckets.sql`
-4. `supabase/tests/rls_hardening.sql` (verification script; includes `rollback`)
+3. `supabase/migrations/202602140003_admin_membership_and_provisioning.sql`
+4. `supabase/storage/001_avatar_buckets.sql`
+5. `supabase/tests/rls_hardening.sql` (verification script; includes `rollback`)
 
 After SQL is applied, configure edge function secrets in Supabase:
 
@@ -21,7 +22,7 @@ After SQL is applied, configure edge function secrets in Supabase:
 Deploy functions from CLI (linked to your hosted project) or Dashboard:
 
 - `family-bootstrap`
-- `invite-accept`
+- `family-member-create`
 - `game-roll-move`
 - `avatar-generate-pack`
 
@@ -39,8 +40,8 @@ Deploy functions from CLI (linked to your hosted project) or Dashboard:
 - [ ] RLS is enabled for family-scoped tables
 - [ ] Storage buckets exist: `avatar-packs`, `avatar-originals`
 - [ ] `avatar-packs` write path is service-role/edge-function only
-- [ ] `family-bootstrap` creates family + owner + default rooms atomically
-- [ ] `invite-accept` accepts valid invite token atomically
+- [ ] `family-bootstrap` creates family + admin + default rooms atomically
+- [ ] `family-member-create` creates auth user + family member atomically
 - [ ] `game-roll-move` executes transactional authoritative roll/move RPC
 - [ ] `avatar-generate-pack` generates and uploads 4 transparent PNG expressions
 - [ ] `supabase/tests/rls_hardening.sql` executes without assertion failures

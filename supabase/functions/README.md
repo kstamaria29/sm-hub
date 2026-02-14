@@ -1,7 +1,7 @@
 # Edge Functions (Scaffold)
 
-- `family-bootstrap`: atomically creates family + owner membership + default rooms
-- `invite-accept`: accepts an invite token using transaction-safe DB logic
+- `family-bootstrap`: atomically creates family + admin membership + default rooms
+- `family-member-create`: admin creates member auth account + family membership with temporary password
 - `game-roll-move`: authoritative Snakes & Ladders turn executor
 - `avatar-generate-pack`: server-side avatar pack generation orchestrator
 

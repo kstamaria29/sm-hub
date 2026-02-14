@@ -21,7 +21,8 @@ Commands:
 - Run SQL files manually in Supabase Dashboard SQL Editor in this order:
   1. `supabase/migrations/202602140001_initial_schema.sql`
   2. `supabase/migrations/202602140002_transactions_and_hardening.sql`
-  3. `supabase/storage/001_avatar_buckets.sql`
-  4. `supabase/tests/rls_hardening.sql`
+  3. `supabase/migrations/202602140003_admin_membership_and_provisioning.sql`
+  4. `supabase/storage/001_avatar_buckets.sql`
+  5. `supabase/tests/rls_hardening.sql`
 
 See `supabase/README.md` for edge function secrets and deployment checklist.

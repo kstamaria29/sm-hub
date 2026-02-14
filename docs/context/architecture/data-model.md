@@ -3,8 +3,8 @@
 ## Core Tables
 
 - `families`: family workspace root
-- `family_members`: membership + role (`owner`, `admin`, `member`)
-- `invites`: invite codes/tokens and lifecycle status
+- `family_members`: membership + role (`admin`, `member`)
+- `invites`: legacy invite table (not used in current app flow)
 - `rooms`: family-scoped rooms (`chat`, `game`)
 - `messages`: room messages
 - `games`: game session state (status, turn pointer, mapping id)
@@ -16,7 +16,7 @@
 ## Key Relationships
 
 - `families 1 -> many family_members`
-- `families 1 -> many invites`
+- `families 1 -> many invites` (legacy)
 - `families 1 -> many rooms`
 - `rooms 1 -> many messages`
 - `rooms 1 -> many games` (for game rooms)

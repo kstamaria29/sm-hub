@@ -98,7 +98,7 @@ with check (
   and app.is_family_member(app.storage_family_id(name))
   and (
     app.storage_user_id(name) = auth.uid()
-    or app.family_role_for_user(app.storage_family_id(name)) in ('owner', 'admin')
+    or app.family_role_for_user(app.storage_family_id(name)) = 'admin'
   )
 );
 
@@ -111,7 +111,7 @@ using (
   and app.is_family_member(app.storage_family_id(name))
   and (
     app.storage_user_id(name) = auth.uid()
-    or app.family_role_for_user(app.storage_family_id(name)) in ('owner', 'admin')
+    or app.family_role_for_user(app.storage_family_id(name)) = 'admin'
   )
 )
 with check (
@@ -119,7 +119,7 @@ with check (
   and app.is_family_member(app.storage_family_id(name))
   and (
     app.storage_user_id(name) = auth.uid()
-    or app.family_role_for_user(app.storage_family_id(name)) in ('owner', 'admin')
+    or app.family_role_for_user(app.storage_family_id(name)) = 'admin'
   )
 );
 
@@ -132,6 +132,6 @@ using (
   and app.is_family_member(app.storage_family_id(name))
   and (
     app.storage_user_id(name) = auth.uid()
-    or app.family_role_for_user(app.storage_family_id(name)) in ('owner', 'admin')
+    or app.family_role_for_user(app.storage_family_id(name)) = 'admin'
   )
 );

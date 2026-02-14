@@ -2,8 +2,7 @@
 
 ## Role Model
 
-- `owner`: full family management permissions
-- `admin`: elevated management permissions (without owner-only actions)
+- `admin`: full family management permissions
 - `member`: normal participant permissions
 
 ## Family-Only Access
@@ -13,8 +12,8 @@
 
 ## RLS Intent by Domain
 
-- Family and membership tables: owner/admin manage membership; members can read own family records.
-- Invites: owner/admin create/revoke; members read minimal status if needed.
+- Family and membership tables: admins manage membership; members can read own family records.
+- Invites table remains legacy-only and is not used in the app flow.
 - Chat (`rooms`, `messages`): members can read/write inside their family rooms.
 - Games (`games`, `game_players`, `game_events`): members read; authoritative writes happen through Edge Functions.
 - Avatar metadata (`user_profiles`, `avatar_packs`): members manage own profile; family members can read avatar pack metadata needed for rendering.
@@ -22,4 +21,4 @@
 ## Storage Intent
 
 - `avatar-packs` bucket: family-scoped read; write only from server-side function/service role.
-- `avatar-originals` bucket: optional; user can manage own original, owner/admin may have delegated access.
+- `avatar-originals` bucket: optional; user can manage own original, admin may have delegated access.

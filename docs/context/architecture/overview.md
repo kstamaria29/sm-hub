@@ -8,20 +8,20 @@
 
 ## Backend (Supabase)
 
-- Auth: invite-only sign-in (email OTP or phone OTP)
+- Auth: email/password sign-in
 - Postgres: source of truth for family, chat, game, and avatar metadata
 - Realtime: room messages and game state subscriptions
 - Storage: avatar-originals (optional) and avatar-packs (required)
 
 ## Edge Functions
 
-- `family-bootstrap`: creates family, owner membership, and default rooms atomically
-- `invite-accept`: validates invite token and joins member atomically
+- `family-bootstrap`: creates family, admin membership, and default rooms atomically
+- `family-member-create`: admin provisions auth user + family membership with temporary password
 - `game-roll-move`: validates turn order and applies authoritative move transaction
 - `avatar-generate-pack`: orchestrates server-side avatar pack generation and storage
 
 ## Security Model
 
 - RLS enforces family-only access.
-- Role distinctions: owner/admin vs member.
+- Role distinctions: admin vs member.
 - Service role is used for backend-only privileged operations.

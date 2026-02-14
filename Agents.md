@@ -1,10 +1,11 @@
-# AGENTS.md — SM Games / Family Hub (v1)
+# AGENTS.md - SM Games / Family Hub (v1)
 
 ## Product snapshot
 
-We are building a private, invite-only family app (8–10 members, ages 30–65) focused on:
+We are building a private, admin-managed family app (8-10 members, ages 30-65) focused on:
 
-- Invite-only onboarding
+- Email/password onboarding
+- Admin-provisioned members (admin enters member email, system generates temporary password)
 - Family chat (real-time)
 - Snakes & Ladders (turn-based, authoritative state)
 - Cartoon avatar packs (transparent PNG) used as game tokens
@@ -17,7 +18,7 @@ Out of scope for v1:
 ## Non-negotiables
 
 - Privacy-first: all data is scoped to a single family space; no public profiles.
-- Server-authoritative game moves (no client-side “trust me” moves).
+- Server-authoritative game moves (no client-side "trust me" moves).
 - Simple UX: big buttons, clear turn indicator, low friction for mixed tech comfort.
 - Portrait + landscape support for the board screen.
 - Each user picks their own avatar style; avatars are transparent PNGs.
@@ -31,7 +32,7 @@ Out of scope for v1:
 - Use **Context7 MCP** for framework/library documentation (Expo/React Native ecosystem included).
 - Use **OpenAI Developer Docs MCP** for OpenAI/Codex/MCP topics.
 
-## Tech stack (v1) — DO NOT CHANGE without an ADR
+## Tech stack (v1) - DO NOT CHANGE without an ADR
 
 ### Client
 
@@ -42,16 +43,16 @@ Out of scope for v1:
 ### Backend
 
 - Supabase
-  - Auth (invite-only onboarding; email OTP or phone OTP)
+  - Auth (email/password)
   - Postgres (source of truth)
   - Row Level Security (RLS) for family-only data access
   - Realtime (chat + game room state updates)
-  - Edge Functions (server-authoritative actions: dice roll / move validation, avatar generation orchestration)
+  - Edge Functions (server-authoritative actions: dice roll / move validation, avatar generation orchestration, member provisioning)
   - Storage (avatar originals optional; cartoon avatar pack PNGs required)
 
 ### OpenAI
 
-- OpenAI Image Generation (server-side only) to generate **transparent PNG** cartoon avatar packs:
+- OpenAI Image Generation (server-side only) to generate transparent PNG cartoon avatar packs:
   - neutral, happy, angry, crying
   - 8 selectable styles per user
 - All OpenAI calls must be made from Edge Functions (never from the mobile client).
@@ -83,7 +84,7 @@ Out of scope for v1:
 
 1. Add a new numbered migration in `supabase/migrations`.
 2. Include schema/constraints/indexes/RLS updates needed for that change.
-3. Keep policies aligned with **owner/admin vs member** permissions (family app).
+3. Keep policies aligned with **admin vs member** permissions (family app).
 4. Update `supabase/README.md` if setup or verification steps change.
 
 ### Storage rules (avatars)
@@ -108,10 +109,10 @@ Access rules (avatars)
 
 - Read: authenticated users who are members of the same family
 - Write/replace:
-  - avatar-originals: the user themself (and optionally owner/admin)
+  - avatar-originals: the user themself (and optionally admin)
   - avatar-packs: **Edge Functions only** (server-generated). Direct client writes are not allowed.
 
-## Animations (v1) — REQUIRED
+## Animations (v1) - REQUIRED
 
 ### Animation libraries
 
@@ -134,17 +135,17 @@ Access rules (avatars)
 ## How to work in this repo (agent workflow)
 
 1. **Plan first**, then implement.
-   - Start every task with: Goals → Constraints → Files to touch → Test plan.
+   - Start every task with: Goals -> Constraints -> Files to touch -> Test plan.
 2. Prefer **small, reviewable changes**.
    - Keep PRs focused; avoid drive-by refactors unless asked.
-3. Before edits, **locate the relevant context** (see “Context Registry” below).
+3. Before edits, **locate the relevant context** (see "Context Registry" below).
 4. After edits:
    - Run the fastest relevant checks (lint/unit) and report results.
-   - If tests aren’t configured, state what you would run and why.
+   - If tests are not configured, state what you would run and why.
 
 ## Architecture principles (v1)
 
-- “Rooms” are the organizing unit: family chat room + game rooms.
+- "Rooms" are the organizing unit: family chat room + game rooms.
 - Snakes & Ladders:
   - Fixed classic mapping for v1 (see context docs)
   - Backend validates: membership, turn order, single roll per turn, atomic updates
@@ -153,27 +154,27 @@ Access rules (avatars)
 ## Avatar pack requirements
 
 Avatar setup flow:
-Upload photo → Crop face → Choose 1 of 8 styles → Generate pack → Preview → Save
+Upload photo -> Crop face -> Choose 1 of 8 styles -> Generate pack -> Preview -> Save
 
 Generation outputs:
 
 - 4 transparent PNGs: neutral, happy, angry, crying
 - Consistent crop/scale across all 4
-- Store as an “Avatar Pack” with an active version per user
+- Store as an "Avatar Pack" with an active version per user
 
 In-game expressions:
 
-- Ladder → happy (≈2s)
-- Snake → angry (≈2s)
-- Big snake drop (≥20 tiles) → crying (≈2s)
-- Win → winner happy; others crying (≈2–3s)
+- Ladder -> happy (~2s)
+- Snake -> angry (~2s)
+- Big snake drop (>=20 tiles) -> crying (~2s)
+- Win -> winner happy; others crying (~2-3s)
 - Otherwise neutral
 
 ## Board skins (v1)
 
 Skins: Tropical, Space, Family
 
-- One fixed mapping → skins are image assets aligned to a master template.
+- One fixed mapping -> skins are image assets aligned to a master template.
 - Prefer: board_base (square), overlay_snakes_ladders (transparent), thumbnail.
 - Do not bake tile numbers into skins unless explicitly requested; numbers should remain readable.
 
@@ -192,9 +193,9 @@ When you need product rules, mappings, UI specs, or decisions:
 - Keep docs updated when you add/move significant files:
   - update `docs/context/INDEX.md`
   - add/adjust ADRs in `docs/context/adr/`
-- Prefer clear names and short docs over huge “mega files”.
+- Prefer clear names and short docs over huge "mega files".
 
-## At the end of every task:
+## At the end of every task
 
 - Suggest one Conventional Commit message in this format:
   - `git commit -m "type: message"`

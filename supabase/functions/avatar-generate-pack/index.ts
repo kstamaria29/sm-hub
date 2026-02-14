@@ -131,12 +131,8 @@ serve(async (req) => {
     return unauthorizedResponse("Caller is not an active member of the target family");
   }
 
-  if (
-    actorUserId !== body.userId &&
-    actorMembership.role !== "owner" &&
-    actorMembership.role !== "admin"
-  ) {
-    return unauthorizedResponse("Only owner/admin can generate avatars for other users");
+  if (actorUserId !== body.userId && actorMembership.role !== "admin") {
+    return unauthorizedResponse("Only admins can generate avatars for other users");
   }
 
   const { data: targetMembership, error: targetMembershipError } = await supabase

@@ -117,6 +117,18 @@ begin
     raise exception 'service_role database role not found';
   end if;
 
+  if not has_schema_privilege('authenticated', 'app', 'USAGE') then
+    raise exception 'authenticated must have USAGE on schema app';
+  end if;
+
+  if not has_schema_privilege('anon', 'app', 'USAGE') then
+    raise exception 'anon must have USAGE on schema app';
+  end if;
+
+  if not has_schema_privilege('service_role', 'app', 'USAGE') then
+    raise exception 'service_role must have USAGE on schema app';
+  end if;
+
   if has_function_privilege('public', 'app.bootstrap_family_v1(uuid,text,text)', 'EXECUTE') then
     raise exception 'public role must not execute app.bootstrap_family_v1';
   end if;
@@ -133,12 +145,16 @@ begin
     raise exception 'public role must not execute app.reserve_avatar_pack_v1';
   end if;
 
+  if has_function_privilege('public', 'app.admin_add_family_member_v1(uuid,uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'public role must not execute app.admin_add_family_member_v1';
+  end if;
+
   if not has_function_privilege('service_role', 'app.bootstrap_family_v1(uuid,text,text)', 'EXECUTE') then
     raise exception 'service_role must execute app.bootstrap_family_v1';
   end if;
 
-  if not has_function_privilege('service_role', 'app.accept_invite_v1(uuid,text,text)', 'EXECUTE') then
-    raise exception 'service_role must execute app.accept_invite_v1';
+  if has_function_privilege('service_role', 'app.accept_invite_v1(uuid,text,text)', 'EXECUTE') then
+    raise exception 'service_role must not execute app.accept_invite_v1';
   end if;
 
   if not has_function_privilege('service_role', 'app.roll_game_turn_v1(uuid,uuid,uuid)', 'EXECUTE') then
@@ -148,11 +164,64 @@ begin
   if not has_function_privilege('service_role', 'app.reserve_avatar_pack_v1(uuid,uuid,text,uuid)', 'EXECUTE') then
     raise exception 'service_role must execute app.reserve_avatar_pack_v1';
   end if;
+
+  if not has_function_privilege('service_role', 'app.admin_add_family_member_v1(uuid,uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'service_role must execute app.admin_add_family_member_v1';
+  end if;
+
+  if has_function_privilege('public', 'public.bootstrap_family_v1(uuid,text,text)', 'EXECUTE') then
+    raise exception 'public role must not execute public.bootstrap_family_v1';
+  end if;
+
+  if has_function_privilege('public', 'public.admin_add_family_member_v1(uuid,uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'public role must not execute public.admin_add_family_member_v1';
+  end if;
+
+  if has_function_privilege('public', 'public.roll_game_turn_v1(uuid,uuid,uuid)', 'EXECUTE') then
+    raise exception 'public role must not execute public.roll_game_turn_v1';
+  end if;
+
+  if has_function_privilege('public', 'public.reserve_avatar_pack_v1(uuid,uuid,text,uuid)', 'EXECUTE') then
+    raise exception 'public role must not execute public.reserve_avatar_pack_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'public.bootstrap_family_v1(uuid,text,text)', 'EXECUTE') then
+    raise exception 'service_role must execute public.bootstrap_family_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'public.admin_add_family_member_v1(uuid,uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'service_role must execute public.admin_add_family_member_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'public.roll_game_turn_v1(uuid,uuid,uuid)', 'EXECUTE') then
+    raise exception 'service_role must execute public.roll_game_turn_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'public.reserve_avatar_pack_v1(uuid,uuid,text,uuid)', 'EXECUTE') then
+    raise exception 'service_role must execute public.reserve_avatar_pack_v1';
+  end if;
+
+  if not has_function_privilege('authenticated', 'app.is_family_member(uuid)', 'EXECUTE') then
+    raise exception 'authenticated must execute app.is_family_member';
+  end if;
+
+  if not has_function_privilege('authenticated', 'app.family_role_for_user(uuid)', 'EXECUTE') then
+    raise exception 'authenticated must execute app.family_role_for_user';
+  end if;
 end
 $$;
 
 do $$
 begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'family_members_no_owner_role'
+      and conrelid = 'public.family_members'::regclass
+  ) then
+    raise exception 'Missing no-owner-role check on family_members';
+  end if;
+
   if not exists (
     select 1
     from pg_indexes

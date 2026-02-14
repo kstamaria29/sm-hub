@@ -69,7 +69,7 @@ export type Database = {
           family_id: string;
           id: string;
           joined_at: string;
-          role: "owner" | "admin" | "member";
+          role: "admin" | "member";
           status: "active" | "left" | "removed";
           user_id: string;
         };
@@ -78,7 +78,7 @@ export type Database = {
           family_id: string;
           id?: string;
           joined_at?: string;
-          role?: "owner" | "admin" | "member";
+          role?: "admin" | "member";
           status?: "active" | "left" | "removed";
           user_id: string;
         };
@@ -87,7 +87,7 @@ export type Database = {
           family_id?: string;
           id?: string;
           joined_at?: string;
-          role?: "owner" | "admin" | "member";
+          role?: "admin" | "member";
           status?: "active" | "left" | "removed";
           user_id?: string;
         };
@@ -340,7 +340,7 @@ export type Database = {
     Views: Record<string, never>;
     Functions: Record<string, never>;
     Enums: {
-      family_role: "owner" | "admin" | "member";
+      family_role: "admin" | "member";
       game_status: "pending" | "active" | "finished" | "cancelled";
       invite_status: "pending" | "accepted" | "revoked" | "expired";
       room_type: "chat" | "game";
