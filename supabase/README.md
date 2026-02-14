@@ -13,8 +13,9 @@ Run SQL manually in the Supabase Dashboard SQL Editor in this exact order:
 5. `supabase/migrations/202602150002_app_schema_usage_for_service_role.sql`
 6. `supabase/migrations/202602150003_rpc_execution_context_hardening.sql`
 7. `supabase/migrations/202602150004_start_game_authoritative.sql`
-8. `supabase/storage/001_avatar_buckets.sql`
-9. `supabase/tests/rls_hardening.sql` (verification script; includes `rollback`)
+8. `supabase/migrations/202602150005_allow_single_player_game_for_testing.sql`
+9. `supabase/storage/001_avatar_buckets.sql`
+10. `supabase/tests/rls_hardening.sql` (verification script; includes `rollback`)
 
 After SQL is applied, configure edge function secrets in Supabase:
 

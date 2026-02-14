@@ -98,6 +98,7 @@ export function useOnboardingGate(): OnboardingGateState {
   const loadProfileForUser = useCallback(
     async (userId: string | null) => {
       if (!supabase || !userId) {
+        setLoadingProfile(false);
         setProfile(null);
         return;
       }
@@ -165,12 +166,18 @@ export function useOnboardingGate(): OnboardingGateState {
 
     void bootstrapSession();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!active) {
         return;
       }
 
       setSession(nextSession);
+
+      // Token refresh should not remount navigation by forcing onboarding "loading" stage.
+      if (event === "TOKEN_REFRESHED") {
+        return;
+      }
+
       void loadProfileForUser(nextSession?.user?.id ?? null);
     });
 
@@ -401,7 +408,7 @@ export function useOnboardingGate(): OnboardingGateState {
       return "misconfigured";
     }
 
-    if (initializing || loadingProfile) {
+    if (initializing) {
       return "loading";
     }
 
@@ -410,6 +417,10 @@ export function useOnboardingGate(): OnboardingGateState {
     }
 
     if (!profile?.family_id) {
+      if (loadingProfile) {
+        return "loading";
+      }
+
       return "needs_family";
     }
 

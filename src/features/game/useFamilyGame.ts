@@ -56,8 +56,15 @@ function createRequestId(): string {
     return crypto.randomUUID();
   }
 
-  const segment = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).slice(1);
-  return `${segment()}${segment()}-${segment()}-${segment()}-${segment()}-${segment()}${segment()}${segment()}`;
+  const template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
+  return template.replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    if (char === "x") {
+      return random.toString(16);
+    }
+
+    return ((random & 0x3) | 0x8).toString(16);
+  });
 }
 
 async function parseFunctionInvokeError(error: { message: string; context?: Response }): Promise<string> {
