@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RealtimeChannel } from "@supabase/supabase-js";
 
+import { AvatarExpression, createSignedAvatarUrl } from "../avatar/avatarPack";
 import { Database, Json } from "../../lib/database.types";
 import { getSupabaseClient, isSupabaseConfigured } from "../../lib/supabase";
 
@@ -11,6 +12,13 @@ type GameEventRow = Database["public"]["Tables"]["game_events"]["Row"];
 type UserProfileName = {
   user_id: string;
   display_name: string | null;
+  avatar_style_id: string | null;
+};
+
+type AvatarPackPathRow = {
+  user_id: string;
+  style_id: string;
+  base_path: string;
 };
 
 export type GamePlayerView = {
@@ -18,6 +26,8 @@ export type GamePlayerView = {
   playerOrder: number;
   tilePosition: number;
   displayName: string;
+  expression: AvatarExpression;
+  avatarUrl: string | null;
 };
 
 export type GameEventView = {
@@ -25,6 +35,7 @@ export type GameEventView = {
   eventType: string;
   payload: Json;
   createdAt: string;
+  createdBy: string | null;
 };
 
 export type FamilyGameState = {
@@ -49,6 +60,71 @@ export type FamilyGameState = {
 
 function formatFallbackUserLabel(userId: string): string {
   return `User ${userId.slice(0, 8)}`;
+}
+
+function asJsonObject(value: Json): Record<string, Json> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, Json>;
+  }
+
+  return null;
+}
+
+function toStringValue(value: Json | undefined): string | null {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value;
+  }
+
+  return null;
+}
+
+function resolvePreferredAvatarPackPath(
+  packRows: AvatarPackPathRow[],
+  preferredStyleId: string | null,
+): string | null {
+  if (packRows.length === 0) {
+    return null;
+  }
+
+  if (preferredStyleId) {
+    const preferredPack = packRows.find((pack) => pack.style_id === preferredStyleId);
+    if (preferredPack) {
+      return preferredPack.base_path;
+    }
+  }
+
+  return packRows[0].base_path;
+}
+
+function resolvePlayerExpression(
+  gameRow: GameRow,
+  latestRollEvent: GameEventView | null,
+  playerUserId: string,
+): AvatarExpression {
+  if (gameRow.status === "finished" && gameRow.winner_user_id) {
+    return gameRow.winner_user_id === playerUserId ? "happy" : "crying";
+  }
+
+  if (!latestRollEvent || latestRollEvent.createdBy !== playerUserId) {
+    return "neutral";
+  }
+
+  const payload = asJsonObject(latestRollEvent.payload);
+  const transition = toStringValue(payload?.transition);
+
+  if (transition === "ladder") {
+    return "happy";
+  }
+
+  if (transition === "snake") {
+    return "angry";
+  }
+
+  if (transition === "big_snake") {
+    return "crying";
+  }
+
+  return "neutral";
 }
 
 function createRequestId(): string {
@@ -248,7 +324,7 @@ export function useFamilyGame(): FamilyGameState {
     if (playerUserIds.length > 0) {
       const { data: names, error: namesError } = await supabase
         .from("user_profiles")
-        .select("user_id,display_name")
+        .select("user_id,display_name,avatar_style_id")
         .eq("family_id", profile.family_id)
         .in("user_id", playerUserIds);
 
@@ -261,19 +337,9 @@ export function useFamilyGame(): FamilyGameState {
       profileRows = (names ?? []) as UserProfileName[];
     }
 
-    const namesByUserId = new Map(profileRows.map((entry) => [entry.user_id, entry.display_name]));
-    setPlayers(
-      playerRows.map((player) => ({
-        userId: player.user_id,
-        playerOrder: player.player_order,
-        tilePosition: player.tile_position,
-        displayName: namesByUserId.get(player.user_id) ?? formatFallbackUserLabel(player.user_id),
-      })),
-    );
-
     const { data: gameEvents, error: eventsError } = await supabase
       .from("game_events")
-      .select("id,event_type,payload,created_at")
+      .select("id,event_type,payload,created_at,created_by")
       .eq("game_id", currentGame.id)
       .order("id", { ascending: false })
       .limit(20);
@@ -284,12 +350,88 @@ export function useFamilyGame(): FamilyGameState {
       return;
     }
 
+    const eventRows = (gameEvents ?? []) as Pick<GameEventRow, "id" | "event_type" | "payload" | "created_at" | "created_by">[];
+    const eventViews: GameEventView[] = eventRows.map((entry) => ({
+      id: entry.id,
+      eventType: entry.event_type,
+      payload: entry.payload,
+      createdAt: entry.created_at,
+      createdBy: entry.created_by,
+    }));
+    const latestRollEvent = eventViews.find((event) => event.eventType === "roll_move") ?? null;
+
+    const profilesByUserId = new Map(profileRows.map((entry) => [entry.user_id, entry]));
+    const expressionByUserId = new Map(
+      playerRows.map((player) => [player.user_id, resolvePlayerExpression(currentGame, latestRollEvent, player.user_id)]),
+    );
+
+    let avatarPackRows: AvatarPackPathRow[] = [];
+    if (playerUserIds.length > 0) {
+      const { data: packData, error: packError } = await supabase
+        .from("avatar_packs")
+        .select("user_id,style_id,base_path")
+        .eq("family_id", profile.family_id)
+        .eq("status", "ready")
+        .in("user_id", playerUserIds)
+        .order("created_at", { ascending: false });
+
+      if (packError) {
+        setLoading(false);
+        setError(packError.message);
+        return;
+      }
+
+      avatarPackRows = (packData ?? []) as AvatarPackPathRow[];
+    }
+
+    const avatarPackRowsByUserId = avatarPackRows.reduce<Map<string, AvatarPackPathRow[]>>((acc, row) => {
+      const existingRows = acc.get(row.user_id);
+      if (existingRows) {
+        existingRows.push(row);
+      } else {
+        acc.set(row.user_id, [row]);
+      }
+
+      return acc;
+    }, new Map());
+
+    const avatarUrlByUserId = new Map<string, string | null>();
+    await Promise.all(
+      playerRows.map(async (player) => {
+        const profileEntry = profilesByUserId.get(player.user_id);
+        const userPackRows = avatarPackRowsByUserId.get(player.user_id) ?? [];
+        const basePath = resolvePreferredAvatarPackPath(userPackRows, profileEntry?.avatar_style_id ?? null);
+        if (!basePath) {
+          avatarUrlByUserId.set(player.user_id, null);
+          return;
+        }
+
+        const expression = expressionByUserId.get(player.user_id) ?? "neutral";
+        const imagePath = `${basePath}/${expression}.png`;
+        const signedUrl = await createSignedAvatarUrl(supabase, imagePath, 60 * 30);
+        avatarUrlByUserId.set(player.user_id, signedUrl);
+      }),
+    );
+
+    const namesByUserId = new Map(profileRows.map((entry) => [entry.user_id, entry.display_name]));
+    setPlayers(
+      playerRows.map((player) => ({
+        userId: player.user_id,
+        playerOrder: player.player_order,
+        tilePosition: player.tile_position,
+        displayName: namesByUserId.get(player.user_id) ?? formatFallbackUserLabel(player.user_id),
+        expression: expressionByUserId.get(player.user_id) ?? "neutral",
+        avatarUrl: avatarUrlByUserId.get(player.user_id) ?? null,
+      })),
+    );
+
     setEvents(
-      ((gameEvents ?? []) as Pick<GameEventRow, "id" | "event_type" | "payload" | "created_at">[]).map((entry) => ({
+      eventViews.map((entry) => ({
         id: entry.id,
-        eventType: entry.event_type,
+        eventType: entry.eventType,
         payload: entry.payload,
-        createdAt: entry.created_at,
+        createdAt: entry.createdAt,
+        createdBy: entry.createdBy,
       })),
     );
     setLoading(false);

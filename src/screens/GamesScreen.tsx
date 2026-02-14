@@ -1,5 +1,6 @@
-import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { Image, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 
+import { avatarExpressionLabel } from "../features/avatar/avatarPack";
 import { GameEventView, useFamilyGame } from "../features/game/useFamilyGame";
 import { Json } from "../lib/database.types";
 import { AppText } from "../ui/primitives/AppText";
@@ -63,7 +64,7 @@ function formatEventSummary(event: GameEventView): string {
 }
 
 export function GamesScreen() {
-  const { spacing } = useTheme();
+  const { colors, spacing } = useTheme();
   const gameState = useFamilyGame();
 
   const currentTurnLabel = (() => {
@@ -137,9 +138,32 @@ export function GamesScreen() {
           ) : (
             <View style={{ gap: spacing.xs }}>
               {gameState.players.map((player) => (
-                <AppText key={player.userId} muted>
-                  {player.playerOrder}. {player.displayName} - tile {player.tilePosition}
-                </AppText>
+                <View
+                  key={player.userId}
+                  style={[styles.playerRow, { borderColor: colors.border, backgroundColor: colors.background }]}
+                >
+                  {player.avatarUrl ? (
+                    <Image source={{ uri: player.avatarUrl }} style={styles.playerAvatar} />
+                  ) : (
+                    <View
+                      style={[
+                        styles.playerAvatar,
+                        styles.playerAvatarFallback,
+                        { borderColor: colors.border, backgroundColor: colors.surface },
+                      ]}
+                    >
+                      <AppText muted>?</AppText>
+                    </View>
+                  )}
+                  <View style={styles.playerMeta}>
+                    <AppText muted>
+                      {player.playerOrder}. {player.displayName} - tile {player.tilePosition}
+                    </AppText>
+                    <AppText variant="caption" muted>
+                      Expression: {avatarExpressionLabel(player.expression)}
+                    </AppText>
+                  </View>
+                </View>
               ))}
             </View>
           )}
@@ -167,5 +191,27 @@ export function GamesScreen() {
 const styles = StyleSheet.create({
   content: {
     flex: 1,
+  },
+  playerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 8,
+  },
+  playerAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+  },
+  playerAvatarFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  playerMeta: {
+    flex: 1,
+    gap: 2,
   },
 });
