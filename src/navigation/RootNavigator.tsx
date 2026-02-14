@@ -1,8 +1,10 @@
 import { NavigationContainer, Theme as NavigationTheme } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 
+import { useOnboardingGate } from "../features/onboarding/useOnboardingGate";
 import { ChatScreen } from "../screens/ChatScreen";
 import { GamesScreen } from "../screens/GamesScreen";
+import { OnboardingScreen } from "../screens/OnboardingScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
 import { useTheme } from "../ui/theme/ThemeProvider";
 
@@ -14,8 +16,35 @@ type RootTabParamList = {
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
+function AppTabs() {
+  const { colors } = useTheme();
+
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarStyle: {
+          borderTopColor: colors.border,
+          backgroundColor: colors.surface,
+        },
+      }}
+    >
+      <Tab.Screen name="Chat" component={ChatScreen} />
+      <Tab.Screen name="Games" component={GamesScreen} />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{ title: "Settings/Profile" }}
+      />
+    </Tab.Navigator>
+  );
+}
+
 export function RootNavigator() {
   const { colors } = useTheme();
+  const onboardingGate = useOnboardingGate();
 
   const navigationTheme: NavigationTheme = {
     dark: false,
@@ -47,27 +76,13 @@ export function RootNavigator() {
     },
   };
 
+  if (onboardingGate.stage !== "ready") {
+    return <OnboardingScreen gate={onboardingGate} />;
+  }
+
   return (
     <NavigationContainer theme={navigationTheme}>
-      <Tab.Navigator
-        screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: colors.primary,
-          tabBarInactiveTintColor: colors.textMuted,
-          tabBarStyle: {
-            borderTopColor: colors.border,
-            backgroundColor: colors.surface,
-          },
-        }}
-      >
-        <Tab.Screen name="Chat" component={ChatScreen} />
-        <Tab.Screen name="Games" component={GamesScreen} />
-        <Tab.Screen
-          name="Profile"
-          component={ProfileScreen}
-          options={{ title: "Settings/Profile" }}
-        />
-      </Tab.Navigator>
+      <AppTabs />
     </NavigationContainer>
   );
 }
