@@ -141,6 +141,10 @@ begin
     raise exception 'public role must not execute app.roll_game_turn_v1';
   end if;
 
+  if has_function_privilege('public', 'app.start_game_v1(uuid,uuid,uuid[])', 'EXECUTE') then
+    raise exception 'public role must not execute app.start_game_v1';
+  end if;
+
   if has_function_privilege('public', 'app.reserve_avatar_pack_v1(uuid,uuid,text,uuid)', 'EXECUTE') then
     raise exception 'public role must not execute app.reserve_avatar_pack_v1';
   end if;
@@ -159,6 +163,10 @@ begin
 
   if not has_function_privilege('service_role', 'app.roll_game_turn_v1(uuid,uuid,uuid)', 'EXECUTE') then
     raise exception 'service_role must execute app.roll_game_turn_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'app.start_game_v1(uuid,uuid,uuid[])', 'EXECUTE') then
+    raise exception 'service_role must execute app.start_game_v1';
   end if;
 
   if not has_function_privilege('service_role', 'app.reserve_avatar_pack_v1(uuid,uuid,text,uuid)', 'EXECUTE') then
@@ -181,6 +189,10 @@ begin
     raise exception 'public role must not execute public.roll_game_turn_v1';
   end if;
 
+  if has_function_privilege('public', 'public.start_game_v1(uuid,uuid,uuid[])', 'EXECUTE') then
+    raise exception 'public role must not execute public.start_game_v1';
+  end if;
+
   if has_function_privilege('public', 'public.reserve_avatar_pack_v1(uuid,uuid,text,uuid)', 'EXECUTE') then
     raise exception 'public role must not execute public.reserve_avatar_pack_v1';
   end if;
@@ -195,6 +207,10 @@ begin
 
   if not has_function_privilege('service_role', 'public.roll_game_turn_v1(uuid,uuid,uuid)', 'EXECUTE') then
     raise exception 'service_role must execute public.roll_game_turn_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'public.start_game_v1(uuid,uuid,uuid[])', 'EXECUTE') then
+    raise exception 'service_role must execute public.start_game_v1';
   end if;
 
   if not has_function_privilege('service_role', 'public.reserve_avatar_pack_v1(uuid,uuid,text,uuid)', 'EXECUTE') then

@@ -17,6 +17,7 @@
 
 - `family-bootstrap`: creates family, admin membership, and default rooms atomically
 - `family-member-create`: admin provisions auth user + family membership with temporary password
+- `game-start`: validates admin caller and starts an authoritative game session
 - `game-roll-move`: validates turn order and applies authoritative move transaction
 - `avatar-generate-pack`: orchestrates server-side avatar pack generation and storage
 

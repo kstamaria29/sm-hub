@@ -9,8 +9,12 @@ Run SQL manually in the Supabase Dashboard SQL Editor in this exact order:
 1. `supabase/migrations/202602140001_initial_schema.sql`
 2. `supabase/migrations/202602140002_transactions_and_hardening.sql`
 3. `supabase/migrations/202602140003_admin_membership_and_provisioning.sql`
-4. `supabase/storage/001_avatar_buckets.sql`
-5. `supabase/tests/rls_hardening.sql` (verification script; includes `rollback`)
+4. `supabase/migrations/202602150001_public_rpc_wrappers.sql`
+5. `supabase/migrations/202602150002_app_schema_usage_for_service_role.sql`
+6. `supabase/migrations/202602150003_rpc_execution_context_hardening.sql`
+7. `supabase/migrations/202602150004_start_game_authoritative.sql`
+8. `supabase/storage/001_avatar_buckets.sql`
+9. `supabase/tests/rls_hardening.sql` (verification script; includes `rollback`)
 
 After SQL is applied, configure edge function secrets in Supabase:
 
@@ -23,6 +27,7 @@ Deploy functions from CLI (linked to your hosted project) or Dashboard:
 
 - `family-bootstrap`
 - `family-member-create`
+- `game-start`
 - `game-roll-move`
 - `avatar-generate-pack`
 
@@ -42,6 +47,7 @@ Deploy functions from CLI (linked to your hosted project) or Dashboard:
 - [ ] `avatar-packs` write path is service-role/edge-function only
 - [ ] `family-bootstrap` creates family + admin + default rooms atomically
 - [ ] `family-member-create` creates auth user + family member atomically
+- [ ] `game-start` starts exactly one active game session per room
 - [ ] `game-roll-move` executes transactional authoritative roll/move RPC
 - [ ] `avatar-generate-pack` generates and uploads 4 transparent PNG expressions
 - [ ] `supabase/tests/rls_hardening.sql` executes without assertion failures

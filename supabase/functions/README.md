@@ -2,6 +2,7 @@
 
 - `family-bootstrap`: atomically creates family + admin membership + default rooms
 - `family-member-create`: admin creates member auth account + family membership with temporary password
+- `game-start`: admin starts a new authoritative Snakes & Ladders session in the family game room
 - `game-roll-move`: authoritative Snakes & Ladders turn executor
 - `avatar-generate-pack`: server-side avatar pack generation orchestrator
 
