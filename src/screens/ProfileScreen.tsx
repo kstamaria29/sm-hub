@@ -34,6 +34,7 @@ const AVATAR_STYLE_OPTIONS = [
   { id: "paper-cut", label: "Paper Cut" },
   { id: "flat-minimal", label: "Flat Minimal" },
 ] as const;
+const AVATAR_EXPRESSIONS = ["neutral", "happy", "angry", "crying"] as const;
 
 async function parseFunctionInvokeError(error: { message: string; context?: Response }): Promise<string> {
   const context = error.context;
@@ -79,6 +80,7 @@ export function ProfileScreen() {
   const [isSavingCinematics, setIsSavingCinematics] = useState(false);
   const [selectedStyleId, setSelectedStyleId] = useState<string>(AVATAR_STYLE_OPTIONS[0].id);
   const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false);
+  const [avatarProgress, setAvatarProgress] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [latestAvatarPack, setLatestAvatarPack] = useState<AvatarPackSummary | null>(null);
 
@@ -238,63 +240,77 @@ export function ProfileScreen() {
     }
 
     setAvatarError(null);
+    setAvatarProgress(null);
     setSettingsError(null);
     setIsGeneratingAvatar(true);
+    try {
+      const { data: refreshData } = await supabase.auth.refreshSession();
+      let accessToken = refreshData.session?.access_token ?? null;
 
-    const { data: refreshData } = await supabase.auth.refreshSession();
-    let accessToken = refreshData.session?.access_token ?? null;
+      if (!accessToken) {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) {
+          setAvatarError(sessionError.message);
+          return;
+        }
 
-    if (!accessToken) {
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) {
-        setAvatarError(sessionError.message);
-        setIsGeneratingAvatar(false);
+        accessToken = sessionData.session?.access_token ?? null;
+      }
+
+      if (!accessToken) {
+        setAvatarError("Your session is invalid or expired. Please sign out and sign in again.");
         return;
       }
 
-      accessToken = sessionData.session?.access_token ?? null;
-    }
+      const invokeExpression = async (expression: (typeof AVATAR_EXPRESSIONS)[number]): Promise<string | null> => {
+        const requestBody = {
+          familyId,
+          userId: currentUserId,
+          styleId: selectedStyleId,
+          expressions: [expression],
+        };
 
-    if (!accessToken) {
-      setAvatarError("Your session is invalid or expired. Please sign out and sign in again.");
-      setIsGeneratingAvatar(false);
-      return;
-    }
+        const { error } = await supabase.functions.invoke("avatar-generate-pack", {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: requestBody,
+        });
 
-    const requestBody = {
-      familyId,
-      userId: currentUserId,
-      styleId: selectedStyleId,
-    };
+        if (!error) {
+          return null;
+        }
 
-    const { error } = await supabase.functions.invoke("avatar-generate-pack", {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: requestBody,
-    });
+        const resolvedMessage = await parseFunctionInvokeError(error as { message: string; context?: Response });
+        if (!resolvedMessage.toLowerCase().includes("invalid jwt")) {
+          return resolvedMessage;
+        }
 
-    if (error) {
-      const resolvedMessage = await parseFunctionInvokeError(error as { message: string; context?: Response });
-      if (resolvedMessage.toLowerCase().includes("invalid jwt")) {
         const { error: retryError } = await supabase.functions.invoke("avatar-generate-pack", {
           body: requestBody,
         });
 
-        if (retryError) {
-          setAvatarError(await parseFunctionInvokeError(retryError as { message: string; context?: Response }));
-          setIsGeneratingAvatar(false);
+        if (!retryError) {
+          return null;
+        }
+
+        return await parseFunctionInvokeError(retryError as { message: string; context?: Response });
+      };
+
+      for (const [index, expression] of AVATAR_EXPRESSIONS.entries()) {
+        setAvatarProgress(`Generating ${expression} (${index + 1}/${AVATAR_EXPRESSIONS.length})...`);
+        const invocationError = await invokeExpression(expression);
+        if (invocationError) {
+          setAvatarError(`Failed on ${expression}: ${invocationError}`);
           return;
         }
-      } else {
-        setAvatarError(resolvedMessage);
-        setIsGeneratingAvatar(false);
-        return;
       }
-    }
 
-    await loadRole();
-    setIsGeneratingAvatar(false);
+      await loadRole();
+    } finally {
+      setAvatarProgress(null);
+      setIsGeneratingAvatar(false);
+    }
   };
 
   const createFamilyMember = async () => {
@@ -482,6 +498,7 @@ export function ProfileScreen() {
           >
             {isGeneratingAvatar ? "Generating Avatar Pack..." : "Generate Avatar Pack"}
           </PrimaryButton>
+          {isGeneratingAvatar && avatarProgress ? <AppText muted>{avatarProgress}</AppText> : null}
 
           {latestAvatarPack ? (
             <View style={{ gap: 4 }}>

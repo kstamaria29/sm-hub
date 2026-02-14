@@ -12,6 +12,7 @@ type GenerateAvatarPackRequest = {
   familyId: string;
   userId: string;
   styleId: string;
+  expressions?: string[];
   sourceImagePath?: string;
 };
 
@@ -27,6 +28,7 @@ const EXPRESSION_PROMPTS = {
   angry: "angry face, eyebrows lowered, playful intensity",
   crying: "crying face, visible tears, emotional but family friendly",
 } as const;
+const ALL_EXPRESSIONS = Object.keys(EXPRESSION_PROMPTS) as Array<keyof typeof EXPRESSION_PROMPTS>;
 
 function decodeBase64(base64: string): Uint8Array {
   const binary = atob(base64);
@@ -72,7 +74,7 @@ async function generateExpressionImageBase64(
       model,
       prompt,
       size: "1024x1024",
-      quality: "high",
+      quality: "low",
       background: "transparent",
       output_format: "png",
       user: actorUserId,
@@ -118,6 +120,22 @@ serve(async (req) => {
     return badRequestResponse("Missing familyId, userId, or styleId");
   }
 
+  const requestedExpressionsRaw =
+    body.expressions && body.expressions.length > 0
+      ? body.expressions
+      : ALL_EXPRESSIONS;
+  const requestedExpressions = Array.from(
+    new Set(
+      requestedExpressionsRaw
+        .map((value) => value.trim().toLowerCase())
+        .filter((value): value is keyof typeof EXPRESSION_PROMPTS => value in EXPRESSION_PROMPTS),
+    ),
+  );
+
+  if (requestedExpressions.length === 0) {
+    return badRequestResponse("expressions must include at least one of neutral, happy, angry, crying");
+  }
+
   const supabase = createServiceClient();
 
   const { data: actorMembership, error: actorMembershipError } = await supabase
@@ -147,28 +165,58 @@ serve(async (req) => {
     return badRequestResponse("Target user is not an active member of the target family");
   }
 
-  const { data: reservedPack, error: reserveError } = await supabase.rpc("reserve_avatar_pack_v1", {
-    p_family_id: body.familyId,
-    p_user_id: body.userId,
-    p_style_id: body.styleId,
-    p_created_by: actorUserId,
-  });
+  const { data: processingPack, error: processingPackError } = await supabase
+    .from("avatar_packs")
+    .select("id,base_path,version")
+    .eq("family_id", body.familyId)
+    .eq("user_id", body.userId)
+    .eq("style_id", body.styleId)
+    .in("status", ["queued", "processing"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  if (reserveError || !reservedPack) {
+  if (processingPackError) {
     return jsonResponse(400, {
-      error: reserveError?.message ?? "Unable to reserve avatar pack version",
-      code: reserveError?.code,
-      hint: reserveError?.hint,
+      error: processingPackError.message,
+      code: processingPackError.code,
+      hint: processingPackError.hint,
     });
   }
 
-  const avatarPackId = reservedPack.avatar_pack_id as string;
-  const basePath = reservedPack.base_path as string;
-  const version = reservedPack.version as number;
+  let avatarPackId: string;
+  let basePath: string;
+  let version: number;
+
+  if (processingPack) {
+    avatarPackId = processingPack.id as string;
+    basePath = processingPack.base_path as string;
+    version = processingPack.version as number;
+  } else {
+    const { data: reservedPack, error: reserveError } = await supabase.rpc("reserve_avatar_pack_v1", {
+      p_family_id: body.familyId,
+      p_user_id: body.userId,
+      p_style_id: body.styleId,
+      p_created_by: actorUserId,
+    });
+
+    if (reserveError || !reservedPack) {
+      return jsonResponse(400, {
+        error: reserveError?.message ?? "Unable to reserve avatar pack version",
+        code: reserveError?.code,
+        hint: reserveError?.hint,
+      });
+    }
+
+    avatarPackId = reservedPack.avatar_pack_id as string;
+    basePath = reservedPack.base_path as string;
+    version = reservedPack.version as number;
+  }
+
   const uploadedPaths: string[] = [];
 
   try {
-    for (const expression of Object.keys(EXPRESSION_PROMPTS) as Array<keyof typeof EXPRESSION_PROMPTS>) {
+    for (const expression of requestedExpressions) {
       const generatedBase64 = await generateExpressionImageBase64(
         expression,
         body.styleId,
@@ -193,28 +241,41 @@ serve(async (req) => {
       uploadedPaths.push(storagePath);
     }
 
-    const { error: finalizePackError } = await supabase
-      .from("avatar_packs")
-      .update({ status: "ready" })
-      .eq("id", avatarPackId);
+    const { data: storedFiles, error: listError } = await supabase.storage
+      .from("avatar-packs")
+      .list(basePath, { limit: 20, offset: 0 });
 
-    if (finalizePackError) {
-      throw new Error(`Failed to finalize avatar pack: ${finalizePackError.message}`);
+    if (listError) {
+      throw new Error(`Failed listing avatar pack files: ${listError.message}`);
     }
 
-    const { error: profileUpdateError } = await supabase
-      .from("user_profiles")
-      .upsert(
-        {
-          user_id: body.userId,
-          family_id: body.familyId,
-          avatar_style_id: body.styleId,
-        },
-        { onConflict: "user_id" },
-      );
+    const generatedFileNames = new Set((storedFiles ?? []).map((file) => file.name));
+    const allReady = ALL_EXPRESSIONS.every((expression) => generatedFileNames.has(`${expression}.png`));
 
-    if (profileUpdateError) {
-      throw new Error(`Failed to update user profile avatar style: ${profileUpdateError.message}`);
+    const { error: updatePackError } = await supabase
+      .from("avatar_packs")
+      .update({ status: allReady ? "ready" : "processing" })
+      .eq("id", avatarPackId);
+
+    if (updatePackError) {
+      throw new Error(`Failed updating avatar pack status: ${updatePackError.message}`);
+    }
+
+    if (allReady) {
+      const { error: profileUpdateError } = await supabase
+        .from("user_profiles")
+        .upsert(
+          {
+            user_id: body.userId,
+            family_id: body.familyId,
+            avatar_style_id: body.styleId,
+          },
+          { onConflict: "user_id" },
+        );
+
+      if (profileUpdateError) {
+        throw new Error(`Failed to update user profile avatar style: ${profileUpdateError.message}`);
+      }
     }
 
     return jsonResponse(200, {
@@ -225,6 +286,7 @@ serve(async (req) => {
         styleId: body.styleId,
         version,
         basePath,
+        status: allReady ? "ready" : "processing",
         files: uploadedPaths,
       },
     });
