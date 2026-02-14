@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { StyleSheet, Switch, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Switch, TextInput, View } from "react-native";
 
 import { getSupabaseClient, isSupabaseConfigured } from "../lib/supabase";
 import { AppText } from "../ui/primitives/AppText";
@@ -14,6 +14,26 @@ type ProvisionResponse = {
     temporaryPassword?: string;
   };
 };
+
+type AvatarPackStatus = "queued" | "processing" | "ready" | "failed";
+
+type AvatarPackSummary = {
+  styleId: string;
+  version: number;
+  status: AvatarPackStatus;
+  createdAt: string;
+};
+
+const AVATAR_STYLE_OPTIONS = [
+  { id: "storybook", label: "Storybook" },
+  { id: "comic", label: "Comic" },
+  { id: "anime-soft", label: "Anime Soft" },
+  { id: "watercolor", label: "Watercolor" },
+  { id: "3d-toy", label: "3D Toy" },
+  { id: "pixel", label: "Pixel" },
+  { id: "paper-cut", label: "Paper Cut" },
+  { id: "flat-minimal", label: "Flat Minimal" },
+] as const;
 
 async function parseFunctionInvokeError(error: { message: string; context?: Response }): Promise<string> {
   const context = error.context;
@@ -50,9 +70,18 @@ export function ProfileScreen() {
   const { colors, spacing } = useTheme();
   const supabase = useMemo(() => getSupabaseClient(), []);
 
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [familyId, setFamilyId] = useState<string | null>(null);
   const [role, setRole] = useState<"admin" | "member" | null>(null);
   const [loadingRole, setLoadingRole] = useState(true);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [cinematicsEnabled, setCinematicsEnabled] = useState(true);
+  const [isSavingCinematics, setIsSavingCinematics] = useState(false);
+  const [selectedStyleId, setSelectedStyleId] = useState<string>(AVATAR_STYLE_OPTIONS[0].id);
+  const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [latestAvatarPack, setLatestAvatarPack] = useState<AvatarPackSummary | null>(null);
+
   const [adminError, setAdminError] = useState<string | null>(null);
   const [memberEmail, setMemberEmail] = useState("");
   const [memberDisplayName, setMemberDisplayName] = useState("");
@@ -65,37 +94,42 @@ export function ProfileScreen() {
   const loadRole = useCallback(async () => {
     if (!supabase || !isSupabaseConfigured) {
       setLoadingRole(false);
-      setAdminError("Supabase environment is not configured.");
+      setSettingsError("Supabase environment is not configured.");
       return;
     }
 
     setLoadingRole(true);
+    setSettingsError(null);
     setAdminError(null);
+    setAvatarError(null);
 
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
     if (sessionError) {
       setLoadingRole(false);
-      setAdminError(sessionError.message);
+      setSettingsError(sessionError.message);
       return;
     }
 
     const userId = sessionData.session?.user?.id ?? null;
+    setCurrentUserId(userId);
+
     if (!userId) {
       setLoadingRole(false);
       setRole(null);
       setFamilyId(null);
+      setLatestAvatarPack(null);
       return;
     }
 
     const { data: profileData, error: profileError } = await supabase
       .from("user_profiles")
-      .select("family_id")
+      .select("family_id,cinematics_enabled,avatar_style_id")
       .eq("user_id", userId)
       .maybeSingle();
 
     if (profileError) {
       setLoadingRole(false);
-      setAdminError(profileError.message);
+      setSettingsError(profileError.message);
       return;
     }
 
@@ -103,7 +137,14 @@ export function ProfileScreen() {
       setLoadingRole(false);
       setRole(null);
       setFamilyId(null);
+      setLatestAvatarPack(null);
       return;
+    }
+
+    setFamilyId(profileData.family_id);
+    setCinematicsEnabled(profileData.cinematics_enabled ?? true);
+    if (profileData.avatar_style_id) {
+      setSelectedStyleId(profileData.avatar_style_id);
     }
 
     const { data: membershipData, error: membershipError } = await supabase
@@ -116,25 +157,145 @@ export function ProfileScreen() {
 
     if (membershipError) {
       setLoadingRole(false);
-      setAdminError(membershipError.message);
+      setSettingsError(membershipError.message);
       return;
     }
 
     if (!membershipData) {
-      setFamilyId(null);
       setRole(null);
       setLoadingRole(false);
       return;
     }
 
-    setFamilyId(profileData.family_id);
     setRole(membershipData.role === "admin" ? "admin" : "member");
+
+    const { data: latestPack, error: latestPackError } = await supabase
+      .from("avatar_packs")
+      .select("style_id,version,status,created_at")
+      .eq("family_id", profileData.family_id)
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestPackError) {
+      setLoadingRole(false);
+      setSettingsError(latestPackError.message);
+      return;
+    }
+
+    if (!latestPack) {
+      setLatestAvatarPack(null);
+      setLoadingRole(false);
+      return;
+    }
+
+    setLatestAvatarPack({
+      styleId: latestPack.style_id,
+      version: latestPack.version,
+      status: latestPack.status as AvatarPackStatus,
+      createdAt: latestPack.created_at,
+    });
+
     setLoadingRole(false);
   }, [supabase]);
 
   useEffect(() => {
     void loadRole();
   }, [loadRole]);
+
+  const persistCinematics = async (nextValue: boolean) => {
+    if (!supabase || !familyId || !currentUserId) {
+      setSettingsError("Family profile is not ready yet.");
+      return;
+    }
+
+    const previousValue = cinematicsEnabled;
+    setCinematicsEnabled(nextValue);
+    setIsSavingCinematics(true);
+    setSettingsError(null);
+
+    const { error } = await supabase
+      .from("user_profiles")
+      .update({
+        cinematics_enabled: nextValue,
+      })
+      .eq("user_id", currentUserId)
+      .eq("family_id", familyId);
+
+    if (error) {
+      setCinematicsEnabled(previousValue);
+      setSettingsError(error.message);
+    }
+
+    setIsSavingCinematics(false);
+  };
+
+  const generateAvatarPack = async () => {
+    if (!supabase || !familyId || !currentUserId) {
+      setAvatarError("Family profile is not ready yet.");
+      return;
+    }
+
+    setAvatarError(null);
+    setSettingsError(null);
+    setIsGeneratingAvatar(true);
+
+    const { data: refreshData } = await supabase.auth.refreshSession();
+    let accessToken = refreshData.session?.access_token ?? null;
+
+    if (!accessToken) {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        setAvatarError(sessionError.message);
+        setIsGeneratingAvatar(false);
+        return;
+      }
+
+      accessToken = sessionData.session?.access_token ?? null;
+    }
+
+    if (!accessToken) {
+      setAvatarError("Your session is invalid or expired. Please sign out and sign in again.");
+      setIsGeneratingAvatar(false);
+      return;
+    }
+
+    const requestBody = {
+      familyId,
+      userId: currentUserId,
+      styleId: selectedStyleId,
+    };
+
+    const { error } = await supabase.functions.invoke("avatar-generate-pack", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: requestBody,
+    });
+
+    if (error) {
+      const resolvedMessage = await parseFunctionInvokeError(error as { message: string; context?: Response });
+      if (resolvedMessage.toLowerCase().includes("invalid jwt")) {
+        const { error: retryError } = await supabase.functions.invoke("avatar-generate-pack", {
+          body: requestBody,
+        });
+
+        if (retryError) {
+          setAvatarError(await parseFunctionInvokeError(retryError as { message: string; context?: Response }));
+          setIsGeneratingAvatar(false);
+          return;
+        }
+      } else {
+        setAvatarError(resolvedMessage);
+        setIsGeneratingAvatar(false);
+        return;
+      }
+    }
+
+    await loadRole();
+    setIsGeneratingAvatar(false);
+  };
 
   const createFamilyMember = async () => {
     if (!supabase || !familyId || role !== "admin") {
@@ -272,8 +433,72 @@ export function ProfileScreen() {
           <AppText variant="title">Cinematics</AppText>
           <View style={styles.toggleRow}>
             <AppText muted>Board camera effects for dice, snake, and ladder moments.</AppText>
-            <Switch value thumbColor={colors.surface} />
+            <Switch
+              value={cinematicsEnabled}
+              onValueChange={(nextValue) => {
+                void persistCinematics(nextValue);
+              }}
+              disabled={isSavingCinematics || loadingRole}
+              thumbColor={colors.surface}
+            />
           </View>
+          {isSavingCinematics ? <AppText muted>Saving setting...</AppText> : null}
+          {settingsError ? <AppText muted>{settingsError}</AppText> : null}
+        </InfoCard>
+
+        <InfoCard>
+          <AppText variant="title">Avatar Style</AppText>
+          <AppText muted>Pick one of 8 styles, then generate a 4-expression pack.</AppText>
+
+          <View style={[styles.styleGrid, { gap: spacing.sm }]}>
+            {AVATAR_STYLE_OPTIONS.map((style) => {
+              const selected = style.id === selectedStyleId;
+              return (
+                <Pressable
+                  key={style.id}
+                  onPress={() => {
+                    setSelectedStyleId(style.id);
+                    setAvatarError(null);
+                  }}
+                  style={[
+                    styles.styleChip,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: selected ? colors.primary : colors.background,
+                    },
+                  ]}
+                >
+                  <AppText style={{ color: selected ? "#ffffff" : colors.text }}>{style.label}</AppText>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <PrimaryButton
+            onPress={() => {
+              void generateAvatarPack();
+            }}
+            disabled={isGeneratingAvatar || loadingRole || !familyId || !currentUserId}
+          >
+            {isGeneratingAvatar ? "Generating Avatar Pack..." : "Generate Avatar Pack"}
+          </PrimaryButton>
+
+          {latestAvatarPack ? (
+            <View style={{ gap: 4 }}>
+              <AppText variant="caption" muted>
+                Latest avatar pack
+              </AppText>
+              <AppText muted>
+                Style: {latestAvatarPack.styleId} | v{latestAvatarPack.version}
+              </AppText>
+              <AppText muted>Status: {latestAvatarPack.status}</AppText>
+              <AppText muted>Updated: {new Date(latestAvatarPack.createdAt).toLocaleString()}</AppText>
+            </View>
+          ) : (
+            <AppText muted>No avatar pack generated yet.</AppText>
+          )}
+
+          {avatarError ? <AppText muted>{avatarError}</AppText> : null}
         </InfoCard>
 
         <InfoCard>
@@ -328,6 +553,16 @@ export function ProfileScreen() {
 const styles = StyleSheet.create({
   content: {
     flex: 1,
+  },
+  styleGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  styleChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   toggleRow: {
     flexDirection: "row",
