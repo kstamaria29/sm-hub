@@ -14,22 +14,46 @@ type CreateFamilyMemberRequest = {
   displayName?: string;
 };
 
-const PASSWORD_LENGTH = 14;
-const PASSWORD_CHARSET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*";
+const PASSWORD_WORDS = [
+  "sunrise",
+  "harbor",
+  "meadow",
+  "orchard",
+  "lantern",
+  "forest",
+  "ocean",
+  "silver",
+  "pepper",
+  "rocket",
+  "family",
+  "garden",
+  "thunder",
+  "marble",
+  "coconut",
+  "rainbow",
+] as const;
 
 function normalizeEmail(rawEmail: string): string {
   return rawEmail.trim().toLowerCase();
 }
 
-function generateTemporaryPassword(length = PASSWORD_LENGTH): string {
-  const bytes = crypto.getRandomValues(new Uint32Array(length));
-  let result = "";
+function randomInt(maxExclusive: number): number {
+  const bytes = crypto.getRandomValues(new Uint32Array(1));
+  return bytes[0] % maxExclusive;
+}
 
-  for (let index = 0; index < length; index += 1) {
-    result += PASSWORD_CHARSET[bytes[index] % PASSWORD_CHARSET.length];
+function capitalizeWord(value: string): string {
+  if (value.length === 0) {
+    return value;
   }
 
-  return result;
+  return `${value[0].toUpperCase()}${value.slice(1)}`;
+}
+
+function generateTemporaryPassword(): string {
+  const selectedWord = PASSWORD_WORDS[randomInt(PASSWORD_WORDS.length)];
+  const twoDigits = String(10 + randomInt(90));
+  return `${capitalizeWord(selectedWord)}${twoDigits}`;
 }
 
 serve(async (req) => {
@@ -81,6 +105,9 @@ serve(async (req) => {
     email,
     password: temporaryPassword,
     email_confirm: true,
+    user_metadata: {
+      must_change_password: true,
+    },
   });
 
   if (createUserError || !createdUser.user) {

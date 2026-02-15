@@ -17,6 +17,8 @@ export function OnboardingScreen({ gate }: OnboardingScreenProps) {
 
   const [email, setEmail] = useState(gate.session?.user?.email ?? "");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
 
   const [displayName, setDisplayName] = useState(gate.profile?.display_name ?? "");
   const [familyName, setFamilyName] = useState("");
@@ -159,6 +161,76 @@ export function OnboardingScreen({ gate }: OnboardingScreenProps) {
     </View>
   );
 
+  const renderPasswordReset = () => {
+    const normalizedNewPassword = newPassword.trim();
+    const passwordsMatch = normalizedNewPassword.length > 0 && newPassword === confirmNewPassword;
+    const showMismatchHint = confirmNewPassword.trim().length > 0 && !passwordsMatch;
+
+    return (
+      <View style={{ gap: spacing.md }}>
+        <InfoCard>
+          <AppText variant="title">First Login Security Step</AppText>
+          <AppText muted>
+            Change your temporary password now. You do not need to enter your old password.
+          </AppText>
+          <AppText muted>{gate.session?.user?.email ?? "Authenticated user"}</AppText>
+
+          <TextInput
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+            placeholder="New password (min 8 chars)"
+            placeholderTextColor={colors.textMuted}
+            style={inputStyle}
+            value={newPassword}
+            onChangeText={(value) => {
+              gate.clearError();
+              setNewPassword(value);
+            }}
+          />
+
+          <TextInput
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+            placeholder="Confirm new password"
+            placeholderTextColor={colors.textMuted}
+            style={inputStyle}
+            value={confirmNewPassword}
+            onChangeText={(value) => {
+              gate.clearError();
+              setConfirmNewPassword(value);
+            }}
+          />
+
+          {showMismatchHint ? <AppText muted>Passwords do not match.</AppText> : null}
+
+          <PrimaryButton
+            onPress={() => {
+              void gate.updatePasswordForFirstLogin(newPassword);
+            }}
+            disabled={
+              gate.isUpdatingPassword ||
+              normalizedNewPassword.length < 8 ||
+              !passwordsMatch
+            }
+          >
+            {gate.isUpdatingPassword ? "Updating Password..." : "Update Password"}
+          </PrimaryButton>
+        </InfoCard>
+
+        <PrimaryButton
+          onPress={() => {
+            void gate.signOut();
+          }}
+          disabled={gate.isSigningOut || gate.isUpdatingPassword}
+        >
+          {gate.isSigningOut ? "Signing Out..." : "Sign Out"}
+        </PrimaryButton>
+      </View>
+    );
+  };
+
   return (
     <Screen>
       <ScrollView contentContainerStyle={[styles.content, { gap: spacing.md, paddingBottom: spacing.xl }]}>
@@ -174,6 +246,7 @@ export function OnboardingScreen({ gate }: OnboardingScreenProps) {
         {gate.stage === "misconfigured" ? renderMisconfigured() : null}
         {gate.stage === "loading" ? renderLoading() : null}
         {gate.stage === "needs_auth" ? renderAuth() : null}
+        {gate.stage === "needs_password_reset" ? renderPasswordReset() : null}
         {gate.stage === "needs_family" ? renderFamilySetup() : null}
       </ScrollView>
     </Screen>

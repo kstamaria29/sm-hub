@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "@react-navigation/native";
 
@@ -42,6 +42,12 @@ type InvokePayload = {
   };
 };
 
+const PRESET_STYLE_IDS = new Set<string>(AVATAR_STYLE_OPTIONS.map((style) => style.id));
+
+function normalizeCustomStyle(rawValue: string): string {
+  return rawValue.trim().replace(/\s+/g, " ");
+}
+
 async function parseFunctionInvokeError(error: { message: string; context?: Response }): Promise<string> {
   const context = error.context;
   if (!context) {
@@ -83,12 +89,14 @@ export function AvatarsScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [familyId, setFamilyId] = useState<string | null>(null);
   const [selectedStyleId, setSelectedStyleId] = useState<string>(AVATAR_STYLE_OPTIONS[0].id);
+  const [customStyleInput, setCustomStyleInput] = useState("");
   const [originalPhotoPath, setOriginalPhotoPath] = useState<string | null>(null);
   const [originalPhotoUrl, setOriginalPhotoUrl] = useState<string | null>(null);
   const [latestAvatarPack, setLatestAvatarPack] = useState<AvatarPackSummary | null>(null);
   const [avatarPreviews, setAvatarPreviews] = useState<AvatarPreviewItem[]>([]);
   const [isGeneratingNeutral, setIsGeneratingNeutral] = useState(false);
   const [isGeneratingExpressions, setIsGeneratingExpressions] = useState(false);
+  const [regeneratingExpression, setRegeneratingExpression] = useState<AvatarExpression | null>(null);
   const [progressMessage, setProgressMessage] = useState<string | null>(null);
 
   const loadPreviewImages = useCallback(
@@ -206,6 +214,11 @@ export function AvatarsScreen() {
 
     const resolvedStyleId = profileData.avatar_style_id ?? AVATAR_STYLE_OPTIONS[0].id;
     setSelectedStyleId(resolvedStyleId);
+    if (PRESET_STYLE_IDS.has(resolvedStyleId)) {
+      setCustomStyleInput("");
+    } else {
+      setCustomStyleInput(resolvedStyleId);
+    }
 
     const existingOriginalPath = await findExistingOriginalAvatarPath(supabase, resolvedFamilyId, userId);
     setOriginalPhotoPath(existingOriginalPath);
@@ -346,7 +359,64 @@ export function AvatarsScreen() {
     }
   }, [avatarPreviews, invokeGeneration]);
 
+  const regenerateSingleExpression = useCallback(
+    async (expression: AvatarExpression) => {
+      if (expression !== "neutral" && !avatarPreviews.some((item) => item.expression === "neutral")) {
+        setError("Generate and approve a neutral avatar first.");
+        return;
+      }
+
+      setError(null);
+      setProgressMessage(`Regenerating ${avatarExpressionLabel(expression).toLowerCase()} avatar...`);
+      setRegeneratingExpression(expression);
+      try {
+        await invokeGeneration([expression]);
+      } finally {
+        setRegeneratingExpression(null);
+        setProgressMessage(null);
+      }
+    },
+    [avatarPreviews, invokeGeneration],
+  );
+
+  const applyCustomStyle = useCallback(() => {
+    const normalizedStyle = normalizeCustomStyle(customStyleInput);
+    if (normalizedStyle.length === 0) {
+      setError("Custom avatar style is required.");
+      return;
+    }
+
+    if (normalizedStyle.length > 120) {
+      setError("Custom avatar style must be 120 characters or less.");
+      return;
+    }
+
+    if (/[\\/]/.test(normalizedStyle)) {
+      setError("Custom avatar style cannot include / or \\ characters.");
+      return;
+    }
+
+    setError(null);
+    setSelectedStyleId(normalizedStyle);
+  }, [customStyleInput]);
+
   const neutralPreview = avatarPreviews.find((item) => item.expression === "neutral") ?? null;
+  const hasNeutralPreview = neutralPreview !== null;
+  const usingCustomStyle = !PRESET_STYLE_IDS.has(selectedStyleId);
+  const normalizedCustomStyle = normalizeCustomStyle(customStyleInput);
+  const anyGenerationInFlight =
+    isGeneratingNeutral || isGeneratingExpressions || regeneratingExpression !== null;
+  const canApplyCustomStyle =
+    normalizedCustomStyle.length > 0 && normalizedCustomStyle !== selectedStyleId && !anyGenerationInFlight;
+  const inputStyle = {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    color: colors.text,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.background,
+  } as const;
 
   return (
     <Screen>
@@ -396,6 +466,28 @@ export function AvatarsScreen() {
               );
             })}
           </View>
+          <TextInput
+            placeholder="Custom style (e.g. hand-drawn pastel portrait)"
+            placeholderTextColor={colors.textMuted}
+            value={customStyleInput}
+            onChangeText={(value) => {
+              setCustomStyleInput(value);
+              setError(null);
+            }}
+            style={inputStyle}
+          />
+          <PrimaryButton
+            onPress={applyCustomStyle}
+            disabled={!canApplyCustomStyle}
+          >
+            Use Custom Style
+          </PrimaryButton>
+          <AppText muted>
+            Active style: {selectedStyleId}
+          </AppText>
+          {usingCustomStyle ? (
+            <AppText muted>Using custom style prompt.</AppText>
+          ) : null}
         </InfoCard>
 
         <InfoCard>
@@ -417,7 +509,7 @@ export function AvatarsScreen() {
             onPress={() => {
               void generateNeutral();
             }}
-            disabled={loading || isGeneratingNeutral || isGeneratingExpressions || !originalPhotoPath}
+            disabled={loading || anyGenerationInFlight || !originalPhotoPath}
           >
             {isGeneratingNeutral ? "Generating Neutral..." : neutralPreview ? "Regenerate Neutral" : "Generate Neutral Avatar"}
           </PrimaryButton>
@@ -426,7 +518,7 @@ export function AvatarsScreen() {
             onPress={() => {
               void generateRemainingExpressions();
             }}
-            disabled={loading || isGeneratingNeutral || isGeneratingExpressions || !neutralPreview}
+            disabled={loading || anyGenerationInFlight || !neutralPreview}
           >
             {isGeneratingExpressions ? "Generating Expressions..." : "Confirm Neutral & Generate Full Pack"}
           </PrimaryButton>
@@ -462,6 +554,26 @@ export function AvatarsScreen() {
                     <AppText variant="caption" muted>
                       {avatarExpressionLabel(expression)}
                     </AppText>
+                    {expression !== "neutral" ? (
+                      <Pressable
+                        onPress={() => {
+                          void regenerateSingleExpression(expression);
+                        }}
+                        disabled={loading || anyGenerationInFlight || !hasNeutralPreview}
+                        style={[
+                          styles.previewRegenerateButton,
+                          {
+                            borderColor: colors.border,
+                            backgroundColor: colors.background,
+                            opacity: loading || anyGenerationInFlight || !hasNeutralPreview ? 0.6 : 1,
+                          },
+                        ]}
+                      >
+                        <AppText variant="caption" muted>
+                          {regeneratingExpression === expression ? "Regenerating..." : "Regenerate"}
+                        </AppText>
+                      </Pressable>
+                    ) : null}
                   </View>
                 );
               })}
@@ -539,6 +651,12 @@ const styles = StyleSheet.create({
     width: 92,
     alignItems: "center",
     gap: 4,
+  },
+  previewRegenerateButton: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   previewImage: {
     width: 84,

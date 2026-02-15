@@ -32,6 +32,8 @@ Last updated: 2026-02-15
 ### Game (Snakes and Ladders)
 
 - Fixed classic mapping board rendered in Games screen.
+- Board skin selector implemented with `Family`, `Tropical`, and `Space` themes.
+- User-selected board skin is persisted in `user_profiles.board_skin_id`.
 - Authoritative game lifecycle implemented:
   - start game (`game-start` -> `start_game_v1`)
   - roll turn (`game-roll-move` -> `roll_game_turn_v1`)
@@ -55,6 +57,8 @@ Temporary testing mode:
 - Avatars screen supports two-step generation:
   - Step 1: generate/regenerate `neutral` preview from original photo
   - Step 2: confirm neutral and generate `happy`, `angry`, `crying`
+- Users can regenerate `happy`, `angry`, and `crying` individually.
+- Style selection supports both preset style chips and a custom style text input.
 - Avatar preview grid and latest pack summary are implemented.
 
 ### Avatar generation backend
@@ -77,6 +81,7 @@ Temporary testing mode:
 - `202602150004_start_game_authoritative.sql`
 - `202602150005_allow_single_player_game_for_testing.sql`
 - `202602150006_end_game_authoritative.sql`
+- `202602150007_user_profile_board_skin.sql`
 
 ## Active Edge Functions
 

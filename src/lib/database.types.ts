@@ -309,6 +309,7 @@ export type Database = {
       user_profiles: {
         Row: {
           avatar_style_id: string | null;
+          board_skin_id: string;
           cinematics_enabled: boolean;
           created_at: string;
           display_name: string | null;
@@ -318,6 +319,7 @@ export type Database = {
         };
         Insert: {
           avatar_style_id?: string | null;
+          board_skin_id?: string;
           cinematics_enabled?: boolean;
           created_at?: string;
           display_name?: string | null;
@@ -327,6 +329,7 @@ export type Database = {
         };
         Update: {
           avatar_style_id?: string | null;
+          board_skin_id?: string;
           cinematics_enabled?: boolean;
           created_at?: string;
           display_name?: string | null;

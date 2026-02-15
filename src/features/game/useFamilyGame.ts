@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { RealtimeChannel } from "@supabase/supabase-js";
 
 import { AvatarExpression, createSignedAvatarUrl } from "../avatar/avatarPack";
+import { BoardSkinId, DEFAULT_BOARD_SKIN_ID, isBoardSkinId } from "./boardSkins";
 import { Database, Json } from "../../lib/database.types";
 import { getSupabaseClient, isSupabaseConfigured } from "../../lib/supabase";
 
@@ -50,10 +51,12 @@ export type FamilyGameState = {
   startingGame: boolean;
   rolling: boolean;
   endingGame: boolean;
+  savingBoardSkin: boolean;
   error: string | null;
   role: "admin" | "member" | null;
   roomTitle: string;
   game: GameRow | null;
+  boardSkinId: BoardSkinId;
   familyMembers: FamilyMemberOption[];
   players: GamePlayerView[];
   events: GameEventView[];
@@ -66,6 +69,7 @@ export type FamilyGameState = {
   startGame: (playerUserIds?: string[]) => Promise<boolean>;
   rollMove: () => Promise<boolean>;
   endGame: () => Promise<boolean>;
+  setBoardSkin: (skinId: BoardSkinId) => Promise<boolean>;
 };
 
 function formatFallbackUserLabel(userId: string): string {
@@ -191,6 +195,7 @@ export function useFamilyGame(): FamilyGameState {
   const [startingGame, setStartingGame] = useState(false);
   const [rolling, setRolling] = useState(false);
   const [endingGame, setEndingGame] = useState(false);
+  const [savingBoardSkin, setSavingBoardSkin] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [role, setRole] = useState<"admin" | "member" | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -198,6 +203,7 @@ export function useFamilyGame(): FamilyGameState {
   const [gameRoomId, setGameRoomId] = useState<string | null>(null);
   const [roomTitle, setRoomTitle] = useState("Snakes and Ladders");
   const [game, setGame] = useState<GameRow | null>(null);
+  const [boardSkinId, setBoardSkinId] = useState<BoardSkinId>(DEFAULT_BOARD_SKIN_ID);
   const [familyMembers, setFamilyMembers] = useState<FamilyMemberOption[]>([]);
   const [players, setPlayers] = useState<GamePlayerView[]>([]);
   const [events, setEvents] = useState<GameEventView[]>([]);
@@ -206,6 +212,7 @@ export function useFamilyGame(): FamilyGameState {
     if (!supabase || !isSupabaseConfigured) {
       setLoading(false);
       setError("Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to enable games.");
+      setBoardSkinId(DEFAULT_BOARD_SKIN_ID);
       setFamilyMembers([]);
       return;
     }
@@ -217,6 +224,7 @@ export function useFamilyGame(): FamilyGameState {
     if (sessionError) {
       setLoading(false);
       setError(sessionError.message);
+      setBoardSkinId(DEFAULT_BOARD_SKIN_ID);
       setFamilyMembers([]);
       return;
     }
@@ -225,6 +233,7 @@ export function useFamilyGame(): FamilyGameState {
     if (!sessionUser) {
       setLoading(false);
       setError("Sign in is required before games can load.");
+      setBoardSkinId(DEFAULT_BOARD_SKIN_ID);
       setFamilyMembers([]);
       return;
     }
@@ -233,13 +242,14 @@ export function useFamilyGame(): FamilyGameState {
 
     const { data: profile, error: profileError } = await supabase
       .from("user_profiles")
-      .select("family_id")
+      .select("family_id,board_skin_id")
       .eq("user_id", sessionUser.id)
       .maybeSingle();
 
     if (profileError) {
       setLoading(false);
       setError(profileError.message);
+      setBoardSkinId(DEFAULT_BOARD_SKIN_ID);
       setFamilyMembers([]);
       return;
     }
@@ -247,11 +257,13 @@ export function useFamilyGame(): FamilyGameState {
     if (!profile?.family_id) {
       setLoading(false);
       setError("No family found for this user profile.");
+      setBoardSkinId(DEFAULT_BOARD_SKIN_ID);
       setFamilyMembers([]);
       return;
     }
 
     setFamilyId(profile.family_id);
+    setBoardSkinId(isBoardSkinId(profile.board_skin_id) ? profile.board_skin_id : DEFAULT_BOARD_SKIN_ID);
 
     const { data: membership, error: membershipError } = await supabase
       .from("family_members")
@@ -660,6 +672,40 @@ export function useFamilyGame(): FamilyGameState {
     return true;
   }, [game, load, resolveAccessToken, role, supabase]);
 
+  const setBoardSkin = useCallback(
+    async (skinId: BoardSkinId) => {
+      if (!supabase || !familyId || !currentUserId) {
+        return false;
+      }
+
+      if (boardSkinId === skinId) {
+        return true;
+      }
+
+      const previousSkinId = boardSkinId;
+      setBoardSkinId(skinId);
+      setSavingBoardSkin(true);
+      setError(null);
+
+      const { error: updateError } = await supabase
+        .from("user_profiles")
+        .update({ board_skin_id: skinId })
+        .eq("user_id", currentUserId)
+        .eq("family_id", familyId);
+
+      if (updateError) {
+        setBoardSkinId(previousSkinId);
+        setError(updateError.message);
+        setSavingBoardSkin(false);
+        return false;
+      }
+
+      setSavingBoardSkin(false);
+      return true;
+    },
+    [boardSkinId, currentUserId, familyId, supabase],
+  );
+
   const isMyTurn = Boolean(
     game &&
       game.status === "active" &&
@@ -674,10 +720,12 @@ export function useFamilyGame(): FamilyGameState {
     startingGame,
     rolling,
     endingGame,
+    savingBoardSkin,
     error,
     role,
     roomTitle,
     game,
+    boardSkinId,
     familyMembers,
     players,
     events,
@@ -690,5 +738,6 @@ export function useFamilyGame(): FamilyGameState {
     startGame,
     rollMove,
     endGame,
+    setBoardSkin,
   };
 }

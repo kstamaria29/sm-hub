@@ -23,10 +23,13 @@ type OpenAIImageResponse = {
 };
 
 const EXPRESSION_PROMPTS = {
-  neutral: "neutral face, calm expression",
-  happy: "happy face, warm smile",
-  angry: "angry face, eyebrows lowered, playful intensity",
-  crying: "crying face, visible tears, emotional but family friendly",
+  neutral: "calm neutral expression, relaxed eyebrows, closed gentle smile or neutral lips",
+  happy:
+    "very joyful expression: broad genuine smile, raised cheeks, bright smiling eyes, lively positive energy",
+  angry:
+    "strong angry expression: deeply furrowed brows, narrowed eyes, tense jaw, flared nostrils, intense but family-safe",
+  crying:
+    "strong crying expression: watery eyes with visible tears, downturned mouth, sad brows, emotional but family-safe",
 } as const;
 const ALL_EXPRESSIONS = Object.keys(EXPRESSION_PROMPTS) as Array<keyof typeof EXPRESSION_PROMPTS>;
 
@@ -46,10 +49,10 @@ function resolveImageQuality(expression: keyof typeof EXPRESSION_PROMPTS): "low"
   }
 
   if (expression === "neutral") {
-    return parseQuality(Deno.env.get("OPENAI_IMAGE_QUALITY_NEUTRAL")) ?? "low";
+    return parseQuality(Deno.env.get("OPENAI_IMAGE_QUALITY_NEUTRAL")) ?? "high";
   }
 
-  return parseQuality(Deno.env.get("OPENAI_IMAGE_QUALITY_EXPRESSIONS")) ?? "medium";
+  return parseQuality(Deno.env.get("OPENAI_IMAGE_QUALITY_EXPRESSIONS")) ?? "high";
 }
 
 function fileNameFromPath(path: string, fallback: string): string {
@@ -69,6 +72,50 @@ function decodeBase64(base64: string): Uint8Array {
   return bytes;
 }
 
+function buildAvatarPrompt(expression: keyof typeof EXPRESSION_PROMPTS, styleId: string): string {
+  const sharedInstructions = [
+    "Output exactly one stylized cartoon avatar portrait with transparent background.",
+    "Family-safe style. No text, no watermark, no border.",
+    "Keep framing centered from upper torso to head.",
+    `Avatar style: ${styleId}.`,
+  ];
+
+  if (expression === "neutral") {
+    return [
+      "Task: Create the neutral base avatar from the original profile photo reference.",
+      "Preserve identity precisely: same apparent gender presentation, age group, skin tone, facial geometry, eye shape, hairline, and hairstyle.",
+      "Keep clothing direction and neckline consistent when visible.",
+      "Maintain adult facial maturity; do not infantilize the face.",
+      ...sharedInstructions,
+      `Expression target: ${EXPRESSION_PROMPTS.neutral}.`,
+      "If style and identity conflict, prioritize identity preservation first.",
+    ].join(" ");
+  }
+
+  const expressionSpecificInstructions: Record<
+    Exclude<keyof typeof EXPRESSION_PROMPTS, "neutral">,
+    string
+  > = {
+    happy:
+      "Make the emotion clearly happier than neutral: wide joyful smile, lifted cheeks, brighter eyes, and celebratory warmth.",
+    angry:
+      "Make the emotion clearly angrier than neutral: stronger brow compression, sharper eye tension, firmer mouth/jaw. Optional subtle cartoon heat cues (light cheek flush or tiny steam squiggles) are allowed if family-safe.",
+    crying:
+      "Make the emotion clearly sadder than neutral: visible tears, watery eyes, trembling/downturned mouth, and softened sorrowful brows.",
+  };
+
+  return [
+    "Task: Edit the provided neutral avatar image and change only facial expression.",
+    "Treat the neutral avatar as the exact source character and composition.",
+    "Do not change identity, hairstyle, hair color, skin tone, face shape, clothing, shoulders, camera angle, framing, linework, shading, or palette.",
+    "Keep pose and crop identical to neutral.",
+    ...sharedInstructions,
+    `Expression target: ${EXPRESSION_PROMPTS[expression]}.`,
+    expressionSpecificInstructions[expression],
+    "Important: preserve character consistency first, then maximize emotional clarity.",
+  ].join(" ");
+}
+
 async function generateExpressionImageBase64(
   expression: keyof typeof EXPRESSION_PROMPTS,
   styleId: string,
@@ -82,22 +129,7 @@ async function generateExpressionImageBase64(
 
   const model = Deno.env.get("OPENAI_IMAGE_MODEL") ?? "gpt-image-1.5";
   const quality = resolveImageQuality(expression);
-  const prompt = [
-    "Transform the reference photo into one stylized cartoon avatar portrait with transparent background.",
-    "Preserve the same person identity from the reference image.",
-    "Do not gender-swap the subject. Preserve apparent gender presentation from the reference exactly.",
-    "Do not change apparent age group, facial structure, skin tone, eye shape, or hairline.",
-    "Keep hairstyle attributes from the reference: length, volume, direction, and parting.",
-    "Keep facial geometry from the reference: jawline, nose shape, lip fullness, and eye spacing.",
-    "Maintain adult facial maturity; avoid child-like proportions unless the reference itself is child-like.",
-    "Avoid stereotypical defaults such as converting the subject to a short-haired teenage boy.",
-    "Keep clothing and neckline direction broadly consistent with the reference when visible.",
-    "Keep framing centered from upper torso to head, with consistent scale across all expression variants.",
-    "Family-safe style. No text, no watermark, no border.",
-    `Avatar style: ${styleId}.`,
-    `Expression: ${EXPRESSION_PROMPTS[expression]}.`,
-    "If style and identity conflict, prioritize identity preservation first.",
-  ].join(" ");
+  const prompt = buildAvatarPrompt(expression, styleId);
 
   const formData = new FormData();
   formData.append("model", model);

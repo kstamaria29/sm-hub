@@ -139,7 +139,7 @@ Access rules (avatars)
 ### Animation libraries
 
 - Use **react-native-reanimated** for game/token/UI animations.
-- Optional: use **lottie-react-native** for a polished dice-roll animation (if assets available).
+- use **lottie-react-native** for a polished dice-roll animation (if assets available).
 - Do not introduce additional animation frameworks without an ADR.
 
 ### Animation rules
@@ -176,7 +176,7 @@ Access rules (avatars)
 ## Avatar pack requirements
 
 Avatar setup flow:
-Upload/take photo -> Choose 1 of 8 styles -> Generate neutral preview -> Confirm neutral -> Generate happy/angry/crying -> Preview pack
+Upload/take photo -> Choose preset style or enter custom style -> Generate neutral preview -> Confirm neutral -> Generate happy/angry/crying -> Preview pack
 
 Generation outputs:
 
@@ -187,6 +187,7 @@ Generation outputs:
 Current implementation note:
 
 - Expression generation after neutral currently runs one expression per request to reduce function compute pressure.
+- Users can regenerate `happy`, `angry`, and `crying` individually after neutral is ready.
 
 In-game expressions:
 

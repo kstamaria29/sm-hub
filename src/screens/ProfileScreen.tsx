@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, ScrollView, StyleSheet, Switch, TextInput, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from "react-native";
 import { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 
 import {
   buildAvatarOriginalPath,
+  createSignedAvatarUrl,
   createSignedOriginalAvatarUrl,
   findExistingOriginalAvatarPath,
   resolveImageExtension,
@@ -23,6 +24,15 @@ type ProvisionResponse = {
     email?: string;
     temporaryPassword?: string;
   };
+};
+
+type FamilyMemberListItem = {
+  userId: string;
+  role: "admin" | "member";
+  status: string;
+  displayName: string | null;
+  joinedAt: string | null;
+  isCurrentUser: boolean;
 };
 
 function decodeBase64ToBytes(base64: string): Uint8Array {
@@ -104,9 +114,12 @@ export function ProfileScreen() {
   const [isSavingDisplayName, setIsSavingDisplayName] = useState(false);
   const [cinematicsEnabled, setCinematicsEnabled] = useState(true);
   const [isSavingCinematics, setIsSavingCinematics] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const [isUploadingOriginalPhoto, setIsUploadingOriginalPhoto] = useState(false);
   const [originalPhotoPath, setOriginalPhotoPath] = useState<string | null>(null);
   const [originalPhotoUrl, setOriginalPhotoUrl] = useState<string | null>(null);
+  const [neutralAvatarUrl, setNeutralAvatarUrl] = useState<string | null>(null);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
 
   const [adminError, setAdminError] = useState<string | null>(null);
   const [memberEmail, setMemberEmail] = useState("");
@@ -116,6 +129,16 @@ export function ProfileScreen() {
     email: string;
     temporaryPassword: string;
   } | null>(null);
+  const [familyMembers, setFamilyMembers] = useState<FamilyMemberListItem[]>([]);
+  const [isDeletingMemberId, setIsDeletingMemberId] = useState<string | null>(null);
+  const [memberDeleteError, setMemberDeleteError] = useState<string | null>(null);
+  const [memberDeleteSuccess, setMemberDeleteSuccess] = useState<string | null>(null);
+
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
 
   const loadRole = useCallback(async () => {
     if (!supabase || !isSupabaseConfigured) {
@@ -128,6 +151,11 @@ export function ProfileScreen() {
     setSettingsError(null);
     setPhotoError(null);
     setAdminError(null);
+    setSignOutError(null);
+    setMemberDeleteError(null);
+    setMemberDeleteSuccess(null);
+    setPasswordError(null);
+    setPasswordSuccess(null);
 
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
     if (sessionError) {
@@ -147,12 +175,14 @@ export function ProfileScreen() {
       setSavedDisplayName("");
       setOriginalPhotoPath(null);
       setOriginalPhotoUrl(null);
+      setNeutralAvatarUrl(null);
+      setFamilyMembers([]);
       return;
     }
 
     const { data: profileData, error: profileError } = await supabase
       .from("user_profiles")
-      .select("family_id,cinematics_enabled,display_name")
+      .select("family_id,cinematics_enabled,display_name,avatar_style_id")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -170,6 +200,8 @@ export function ProfileScreen() {
       setSavedDisplayName("");
       setOriginalPhotoPath(null);
       setOriginalPhotoUrl(null);
+      setNeutralAvatarUrl(null);
+      setFamilyMembers([]);
       return;
     }
 
@@ -197,11 +229,73 @@ export function ProfileScreen() {
 
     if (!membershipData) {
       setRole(null);
+      setFamilyMembers([]);
       setLoadingRole(false);
       return;
     }
 
-    setRole(membershipData.role === "admin" ? "admin" : "member");
+    const isAdmin = membershipData.role === "admin";
+    setRole(isAdmin ? "admin" : "member");
+
+    if (isAdmin) {
+      const { data: memberRows, error: memberRowsError } = await supabase
+        .from("family_members")
+        .select("user_id,role,status,joined_at")
+        .eq("family_id", resolvedFamilyId)
+        .eq("status", "active");
+
+      if (memberRowsError) {
+        setLoadingRole(false);
+        setSettingsError(memberRowsError.message);
+        return;
+      }
+
+      const memberUserIds = (memberRows ?? []).map((row) => row.user_id);
+      let displayNamesByUserId = new Map<string, string>();
+
+      if (memberUserIds.length > 0) {
+        const { data: memberProfiles, error: memberProfilesError } = await supabase
+          .from("user_profiles")
+          .select("user_id,display_name")
+          .eq("family_id", resolvedFamilyId)
+          .in("user_id", memberUserIds);
+
+        if (memberProfilesError) {
+          setLoadingRole(false);
+          setSettingsError(memberProfilesError.message);
+          return;
+        }
+
+        displayNamesByUserId = new Map(
+          (memberProfiles ?? [])
+            .filter((profile) => typeof profile.display_name === "string" && profile.display_name.trim().length > 0)
+            .map((profile) => [profile.user_id, (profile.display_name ?? "").trim()]),
+        );
+      }
+
+      const listItems = (memberRows ?? [])
+        .map((row) => ({
+          userId: row.user_id,
+          role: (row.role === "admin" ? "admin" : "member") as "admin" | "member",
+          status: row.status,
+          joinedAt: row.joined_at,
+          displayName: displayNamesByUserId.get(row.user_id) ?? null,
+          isCurrentUser: row.user_id === userId,
+        }))
+        .sort((left, right) => {
+          if (left.role !== right.role) {
+            return left.role === "admin" ? -1 : 1;
+          }
+
+          const leftLabel = (left.displayName ?? left.userId).toLowerCase();
+          const rightLabel = (right.displayName ?? right.userId).toLowerCase();
+          return leftLabel.localeCompare(rightLabel);
+        });
+
+      setFamilyMembers(listItems);
+    } else {
+      setFamilyMembers([]);
+    }
 
     const existingOriginalPath = await findExistingOriginalAvatarPath(supabase, resolvedFamilyId, userId);
     setOriginalPhotoPath(existingOriginalPath);
@@ -211,12 +305,53 @@ export function ProfileScreen() {
       setOriginalPhotoUrl(null);
     }
 
+    const preferredStyleId = profileData.avatar_style_id ?? null;
+    let neutralBasePath: string | null = null;
+
+    if (preferredStyleId) {
+      const { data: preferredPack } = await supabase
+        .from("avatar_packs")
+        .select("base_path")
+        .eq("family_id", resolvedFamilyId)
+        .eq("user_id", userId)
+        .eq("status", "ready")
+        .eq("style_id", preferredStyleId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      neutralBasePath = preferredPack?.base_path ?? null;
+    }
+
+    if (!neutralBasePath) {
+      const { data: fallbackPack } = await supabase
+        .from("avatar_packs")
+        .select("base_path")
+        .eq("family_id", resolvedFamilyId)
+        .eq("user_id", userId)
+        .eq("status", "ready")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      neutralBasePath = fallbackPack?.base_path ?? null;
+    }
+
+    if (neutralBasePath) {
+      setNeutralAvatarUrl(await createSignedAvatarUrl(supabase, `${neutralBasePath}/neutral.png`));
+    } else {
+      setNeutralAvatarUrl(null);
+    }
+
     setLoadingRole(false);
   }, [supabase]);
 
-  useEffect(() => {
-    void loadRole();
-  }, [loadRole]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadRole();
+      return undefined;
+    }, [loadRole]),
+  );
 
   const persistDisplayName = async () => {
     if (!supabase || !familyId || !currentUserId) {
@@ -508,6 +643,175 @@ export function ProfileScreen() {
     setMemberEmail("");
     setMemberDisplayName("");
     setIsCreatingMember(false);
+    await loadRole();
+  };
+
+  const getFunctionAccessToken = useCallback(async (): Promise<string | null> => {
+    if (!supabase) {
+      return null;
+    }
+
+    const { data: refreshData } = await supabase.auth.refreshSession();
+    let accessToken = refreshData.session?.access_token ?? null;
+
+    if (accessToken) {
+      return accessToken;
+    }
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+      return null;
+    }
+
+    accessToken = sessionData.session?.access_token ?? null;
+    return accessToken;
+  }, [supabase]);
+
+  const deleteFamilyMember = useCallback(
+    async (member: FamilyMemberListItem) => {
+      if (!supabase || !familyId || role !== "admin") {
+        return;
+      }
+
+      setMemberDeleteError(null);
+      setMemberDeleteSuccess(null);
+      setIsDeletingMemberId(member.userId);
+
+      const accessToken = await getFunctionAccessToken();
+      if (!accessToken) {
+        setMemberDeleteError("Your session is invalid or expired. Please sign out and sign in again.");
+        setIsDeletingMemberId(null);
+        return;
+      }
+
+      const requestBody = {
+        familyId,
+        memberUserId: member.userId,
+      };
+
+      const { error } = await supabase.functions.invoke("family-member-delete", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: requestBody,
+      });
+
+      if (error) {
+        const resolvedMessage = await parseFunctionInvokeError(error as { message: string; context?: Response });
+        if (resolvedMessage.toLowerCase().includes("invalid jwt")) {
+          const { error: retryError } = await supabase.functions.invoke("family-member-delete", {
+            body: requestBody,
+          });
+
+          if (!retryError) {
+            setMemberDeleteSuccess("Family member deleted.");
+            setFamilyMembers((currentMembers) => currentMembers.filter((current) => current.userId !== member.userId));
+            setIsDeletingMemberId(null);
+            await loadRole();
+            return;
+          }
+
+          const retryMessage = await parseFunctionInvokeError(retryError as { message: string; context?: Response });
+          setMemberDeleteError(retryMessage);
+          setIsDeletingMemberId(null);
+          return;
+        }
+
+        setMemberDeleteError(resolvedMessage);
+        setIsDeletingMemberId(null);
+        return;
+      }
+
+      setMemberDeleteSuccess("Family member deleted.");
+      setFamilyMembers((currentMembers) => currentMembers.filter((current) => current.userId !== member.userId));
+      setIsDeletingMemberId(null);
+      await loadRole();
+    },
+    [familyId, getFunctionAccessToken, loadRole, role, supabase],
+  );
+
+  const confirmDeleteMember = useCallback(
+    (member: FamilyMemberListItem) => {
+      Alert.alert(
+        "Delete family member?",
+        "This permanently deletes the member account, profile data, profile photo, and avatar packs. This cannot be undone.",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => {
+              void deleteFamilyMember(member);
+            },
+          },
+        ],
+      );
+    },
+    [deleteFamilyMember],
+  );
+
+  const changePassword = async () => {
+    if (!supabase || !isSupabaseConfigured) {
+      setPasswordError("Supabase environment is not configured.");
+      return;
+    }
+
+    const nextPassword = newPassword.trim();
+    const confirmNextPassword = confirmPassword.trim();
+
+    if (nextPassword.length < 8) {
+      setPasswordError("New password must be at least 8 characters.");
+      setPasswordSuccess(null);
+      return;
+    }
+
+    if (nextPassword !== confirmNextPassword) {
+      setPasswordError("New password and confirm password must match.");
+      setPasswordSuccess(null);
+      return;
+    }
+
+    setIsChangingPassword(true);
+    setPasswordError(null);
+    setPasswordSuccess(null);
+
+    const { error } = await supabase.auth.updateUser({
+      password: nextPassword,
+      data: {
+        must_change_password: false,
+      },
+    });
+
+    if (error) {
+      setPasswordError(error.message);
+      setIsChangingPassword(false);
+      return;
+    }
+
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordSuccess("Password changed successfully.");
+    setIsChangingPassword(false);
+  };
+
+  const signOutUser = async () => {
+    if (!supabase || !isSupabaseConfigured) {
+      setSignOutError("Supabase environment is not configured.");
+      return;
+    }
+
+    setIsSigningOut(true);
+    setSignOutError(null);
+
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      setSignOutError(error.message);
+    }
+
+    setIsSigningOut(false);
   };
 
   const inputStyle = {
@@ -522,6 +826,15 @@ export function ProfileScreen() {
   const normalizedProfileDisplayName = profileDisplayName.trim();
   const normalizedSavedDisplayName = savedDisplayName.trim();
   const isDisplayNameDirty = normalizedProfileDisplayName !== normalizedSavedDisplayName;
+  const resolveMemberLabel = (member: FamilyMemberListItem) => {
+    const trimmedDisplayName = member.displayName?.trim() ?? "";
+    if (trimmedDisplayName.length > 0) {
+      return member.isCurrentUser ? `${trimmedDisplayName} (You)` : trimmedDisplayName;
+    }
+
+    const fallback = `User ${member.userId.slice(0, 8)}`;
+    return member.isCurrentUser ? `${fallback} (You)` : fallback;
+  };
 
   return (
     <Screen>
@@ -552,13 +865,33 @@ export function ProfileScreen() {
           <AppText variant="title">Profile Photo</AppText>
           <AppText muted>Upload your original photo once. Avatars are generated from this reference.</AppText>
 
-          {originalPhotoUrl ? (
-            <Image source={{ uri: originalPhotoUrl }} style={[styles.profilePhoto, { borderColor: colors.border }]} />
-          ) : (
-            <View style={[styles.profilePhotoPlaceholder, { borderColor: colors.border, backgroundColor: colors.background }]}>
-              <AppText muted>No profile photo uploaded yet.</AppText>
+          <View style={[styles.profileMediaRow, { gap: spacing.sm }]}>
+            <View style={styles.profileMediaCell}>
+              <AppText variant="caption" muted>
+                Original
+              </AppText>
+              {originalPhotoUrl ? (
+                <Image source={{ uri: originalPhotoUrl }} style={[styles.profilePhoto, { borderColor: colors.border }]} />
+              ) : (
+                <View style={[styles.profilePhotoPlaceholder, { borderColor: colors.border, backgroundColor: colors.background }]}>
+                  <AppText muted>No profile photo uploaded yet.</AppText>
+                </View>
+              )}
             </View>
-          )}
+
+            <View style={styles.profileMediaCell}>
+              <AppText variant="caption" muted>
+                Neutral Avatar
+              </AppText>
+              {neutralAvatarUrl ? (
+                <Image source={{ uri: neutralAvatarUrl }} style={[styles.profilePhoto, { borderColor: colors.border }]} />
+              ) : (
+                <View style={[styles.profilePhotoPlaceholder, { borderColor: colors.border, backgroundColor: colors.background }]}>
+                  <AppText muted>No neutral avatar yet.</AppText>
+                </View>
+              )}
+            </View>
+          </View>
 
           <PrimaryButton
             onPress={() => {
@@ -608,6 +941,41 @@ export function ProfileScreen() {
         </InfoCard>
 
         <InfoCard>
+          <AppText variant="title">Change Password</AppText>
+          <AppText muted>Set a new password for this account. Old password is not required.</AppText>
+          <TextInput
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="New password"
+            placeholderTextColor={colors.textMuted}
+            value={newPassword}
+            onChangeText={setNewPassword}
+            style={inputStyle}
+          />
+          <TextInput
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="Confirm new password"
+            placeholderTextColor={colors.textMuted}
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            style={inputStyle}
+          />
+          <PrimaryButton
+            onPress={() => {
+              void changePassword();
+            }}
+            disabled={isChangingPassword}
+          >
+            {isChangingPassword ? "Saving Password..." : "Change Password"}
+          </PrimaryButton>
+          {passwordError ? <AppText muted>{passwordError}</AppText> : null}
+          {passwordSuccess ? <AppText muted>{passwordSuccess}</AppText> : null}
+        </InfoCard>
+
+        <InfoCard>
           <AppText variant="title">Admin Member Provisioning</AppText>
 
           {loadingRole ? <AppText muted>Loading membership role...</AppText> : null}
@@ -648,9 +1016,89 @@ export function ProfileScreen() {
               </AppText>
               <AppText>{createdCredentials.email}</AppText>
               <AppText>{createdCredentials.temporaryPassword}</AppText>
+              <AppText variant="caption" muted>
+                Member must change this temporary password on first login.
+              </AppText>
             </View>
           ) : null}
         </InfoCard>
+
+        <PrimaryButton
+          onPress={() => {
+            void signOutUser();
+          }}
+          disabled={isSigningOut}
+        >
+          {isSigningOut ? "Signing Out..." : "Sign Out"}
+        </PrimaryButton>
+
+        {signOutError ? <AppText muted>{signOutError}</AppText> : null}
+
+        {role === "admin" ? (
+          <InfoCard>
+            <AppText variant="title">Family Members</AppText>
+            <AppText muted>Delete member accounts and their related data.</AppText>
+
+            {familyMembers.length === 0 ? (
+              <AppText muted>No active family members found.</AppText>
+            ) : (
+              <View style={{ gap: spacing.sm }}>
+                {familyMembers.map((member) => {
+                  const canDelete = member.role === "member" && !member.isCurrentUser;
+                  const isDeleting = isDeletingMemberId === member.userId;
+
+                  return (
+                    <View
+                      key={member.userId}
+                      style={[
+                        styles.familyMemberRow,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: colors.background,
+                        },
+                      ]}
+                    >
+                      <View style={styles.familyMemberDetails}>
+                        <AppText>{resolveMemberLabel(member)}</AppText>
+                        <AppText variant="caption" muted>
+                          {member.role === "admin" ? "Admin" : "Member"} - {member.userId.slice(0, 8)}
+                        </AppText>
+                      </View>
+
+                      {canDelete ? (
+                        <Pressable
+                          onPress={() => {
+                            confirmDeleteMember(member);
+                          }}
+                          disabled={isDeleting}
+                          style={({ pressed }) => [
+                            styles.deleteMemberButton,
+                            {
+                              borderColor: "#ef4444",
+                              backgroundColor: isDeleting ? "#fca5a5" : "#fef2f2",
+                              opacity: pressed ? 0.8 : 1,
+                            },
+                          ]}
+                        >
+                          <AppText style={styles.deleteMemberIcon}>{"\u{1F5D1}"}</AppText>
+                        </Pressable>
+                      ) : (
+                        <View style={styles.memberRoleTag}>
+                          <AppText variant="caption" muted>
+                            {member.isCurrentUser ? "You" : "Admin"}
+                          </AppText>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            {memberDeleteError ? <AppText muted>{memberDeleteError}</AppText> : null}
+            {memberDeleteSuccess ? <AppText muted>{memberDeleteSuccess}</AppText> : null}
+          </InfoCard>
+        ) : null}
       </ScrollView>
     </Screen>
   );
@@ -660,16 +1108,26 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
   },
+  profileMediaRow: {
+    flexDirection: "row",
+    flexWrap: "nowrap",
+    alignItems: "flex-start",
+  },
+  profileMediaCell: {
+    flex: 1,
+    minWidth: 0,
+    gap: 6,
+  },
   profilePhoto: {
-    width: 180,
-    height: 180,
+    width: "100%",
+    aspectRatio: 1,
     borderRadius: 14,
     borderWidth: 1,
   },
   profilePhotoPlaceholder: {
-    width: 220,
-    minHeight: 110,
-    borderRadius: 12,
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 14,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -681,5 +1139,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
+  },
+  familyMemberRow: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  familyMemberDetails: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  deleteMemberButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  deleteMemberIcon: {
+    color: "#b42318",
+    fontSize: 16,
+    lineHeight: 18,
+  },
+  memberRoleTag: {
+    minWidth: 46,
+    alignItems: "flex-end",
   },
 });

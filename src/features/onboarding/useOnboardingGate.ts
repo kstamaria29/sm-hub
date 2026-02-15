@@ -9,7 +9,13 @@ type UserProfile = {
   display_name: string | null;
 };
 
-export type OnboardingStage = "misconfigured" | "loading" | "needs_auth" | "needs_family" | "ready";
+export type OnboardingStage =
+  | "misconfigured"
+  | "loading"
+  | "needs_auth"
+  | "needs_password_reset"
+  | "needs_family"
+  | "ready";
 
 export type OnboardingGateState = {
   stage: OnboardingStage;
@@ -19,17 +25,19 @@ export type OnboardingGateState = {
   error: string | null;
   isSigningUp: boolean;
   isSigningIn: boolean;
+  isUpdatingPassword: boolean;
   isCreatingFamily: boolean;
   isSigningOut: boolean;
   signUpWithEmail: (email: string, password: string) => Promise<boolean>;
   signInWithEmail: (email: string, password: string) => Promise<boolean>;
+  updatePasswordForFirstLogin: (password: string) => Promise<boolean>;
   createFamily: (familyName: string, displayName?: string) => Promise<boolean>;
   signOut: () => Promise<boolean>;
   clearError: () => void;
   refresh: () => Promise<void>;
 };
 
-type ActionState = "sign_up" | "sign_in" | "create_family" | "sign_out" | null;
+type ActionState = "sign_up" | "sign_in" | "update_password" | "create_family" | "sign_out" | null;
 
 function toErrorMessage(error: unknown, fallback = "Something went wrong"): string {
   if (error instanceof Error && error.message.trim().length > 0) {
@@ -52,6 +60,20 @@ function toErrorMessage(error: unknown, fallback = "Something went wrong"): stri
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+function isPasswordResetRequired(session: Session | null): boolean {
+  if (!session?.user) {
+    return false;
+  }
+
+  const metadata = session.user.user_metadata;
+  if (!metadata || typeof metadata !== "object") {
+    return false;
+  }
+
+  const flag = (metadata as Record<string, unknown>).must_change_password;
+  return flag === true || flag === "true";
 }
 
 async function parseFunctionInvokeError(error: { message: string; context?: Response }): Promise<string> {
@@ -291,6 +313,60 @@ export function useOnboardingGate(): OnboardingGateState {
     [runAction, supabase],
   );
 
+  const updatePasswordForFirstLogin = useCallback(
+    async (password: string) => {
+      const normalizedPassword = password.trim();
+
+      if (!supabase || !isSupabaseConfigured) {
+        setError("Supabase environment is not configured.");
+        return false;
+      }
+
+      if (!session?.user) {
+        setError("You must be signed in to update your password.");
+        return false;
+      }
+
+      if (normalizedPassword.length < 8) {
+        setError("Password must be at least 8 characters.");
+        return false;
+      }
+
+      return runAction("update_password", async () => {
+        const currentMetadata =
+          session.user.user_metadata && typeof session.user.user_metadata === "object"
+            ? (session.user.user_metadata as Record<string, unknown>)
+            : {};
+
+        const { error: updateError } = await supabase.auth.updateUser({
+          password: normalizedPassword,
+          data: {
+            ...currentMetadata,
+            must_change_password: false,
+            password_changed_at: new Date().toISOString(),
+          },
+        });
+
+        if (updateError) {
+          setError(updateError.message);
+          return false;
+        }
+
+        const { data: refreshedSessionData, error: refreshedSessionError } = await supabase.auth.getSession();
+        if (refreshedSessionError) {
+          setError(refreshedSessionError.message);
+          return false;
+        }
+
+        const refreshedSession = refreshedSessionData.session ?? null;
+        setSession(refreshedSession);
+        await loadProfileForUser(refreshedSession?.user?.id ?? null);
+        return true;
+      });
+    },
+    [loadProfileForUser, runAction, session, supabase],
+  );
+
   const createFamily = useCallback(
     async (familyName: string, displayName?: string) => {
       const normalizedFamilyName = familyName.trim();
@@ -416,6 +492,10 @@ export function useOnboardingGate(): OnboardingGateState {
       return "needs_auth";
     }
 
+    if (isPasswordResetRequired(session)) {
+      return "needs_password_reset";
+    }
+
     if (!profile?.family_id) {
       if (loadingProfile) {
         return "loading";
@@ -435,10 +515,12 @@ export function useOnboardingGate(): OnboardingGateState {
     error,
     isSigningUp: actionState === "sign_up",
     isSigningIn: actionState === "sign_in",
+    isUpdatingPassword: actionState === "update_password",
     isCreatingFamily: actionState === "create_family",
     isSigningOut: actionState === "sign_out",
     signUpWithEmail,
     signInWithEmail,
+    updatePasswordForFirstLogin,
     createFamily,
     signOut,
     clearError: () => setError(null),

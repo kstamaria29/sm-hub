@@ -3,6 +3,7 @@ import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, View, useWind
 
 import { avatarExpressionLabel } from "../features/avatar/avatarPack";
 import { buildClassicBoardCells } from "../features/game/board";
+import { BOARD_SKIN_IDS, BOARD_SKINS } from "../features/game/boardSkins";
 import { GameEventView, useFamilyGame } from "../features/game/useFamilyGame";
 import { Json } from "../lib/database.types";
 import { AppText } from "../ui/primitives/AppText";
@@ -146,6 +147,7 @@ export function GamesScreen() {
   const { colors, spacing } = useTheme();
   const { width, height } = useWindowDimensions();
   const gameState = useFamilyGame();
+  const boardSkin = BOARD_SKINS[gameState.boardSkinId];
   const isLandscape = width > height;
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
 
@@ -273,6 +275,46 @@ export function GamesScreen() {
             <InfoCard>
               <AppText variant="title">Board</AppText>
               <AppText muted>Classic v1 mapping with fixed snakes and ladders.</AppText>
+              <View style={[styles.skinSelectionGrid, { gap: spacing.sm }]}>
+                {BOARD_SKIN_IDS.map((skinId) => {
+                  const skin = BOARD_SKINS[skinId];
+                  const selected = gameState.boardSkinId === skinId;
+
+                  return (
+                    <Pressable
+                      key={skinId}
+                      accessibilityLabel={`Board skin ${skin.label}`}
+                      accessibilityRole="button"
+                      disabled={gameState.savingBoardSkin}
+                      onPress={() => {
+                        void gameState.setBoardSkin(skinId);
+                      }}
+                      style={({ pressed }) => [
+                        styles.skinSelectionChip,
+                        {
+                          borderColor: selected ? colors.primary : colors.border,
+                          backgroundColor: selected ? colors.surface : colors.background,
+                          opacity: gameState.savingBoardSkin ? 0.75 : pressed ? 0.85 : 1,
+                        },
+                      ]}
+                    >
+                      <View style={[styles.skinPreview, { borderColor: skin.boardBorder, backgroundColor: skin.boardBackground }]}>
+                        <View style={[styles.skinPreviewTile, { backgroundColor: skin.tileLight }]} />
+                        <View style={[styles.skinPreviewTile, { backgroundColor: skin.tileDark }]} />
+                        <View style={[styles.skinPreviewTile, { backgroundColor: skin.tileDark }]} />
+                        <View style={[styles.skinPreviewTile, { backgroundColor: skin.tileLight }]} />
+                      </View>
+                      <View style={styles.skinMeta}>
+                        <AppText variant="caption">{skin.label}</AppText>
+                        <AppText variant="caption" muted>
+                          {skin.subtitle}
+                        </AppText>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {gameState.savingBoardSkin ? <AppText variant="caption" muted>Saving board skin...</AppText> : null}
 
               {eventBanner ? (
                 <View
@@ -288,7 +330,7 @@ export function GamesScreen() {
                 </View>
               ) : null}
 
-              <View style={[styles.boardGrid, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              <View style={[styles.boardGrid, { borderColor: boardSkin.boardBorder, backgroundColor: boardSkin.boardBackground }]}>
                 {BOARD_CELLS.map((cell) => {
                   const tilePlayers = playersByTile.get(cell.tile) ?? [];
 
@@ -298,21 +340,33 @@ export function GamesScreen() {
                       style={[
                         styles.boardCell,
                         {
-                          borderColor: colors.border,
-                          backgroundColor: (cell.row + cell.column) % 2 === 0 ? "#f8f9fb" : "#eef2f6",
+                          borderColor: boardSkin.tileBorder,
+                          backgroundColor: (cell.row + cell.column) % 2 === 0 ? boardSkin.tileLight : boardSkin.tileDark,
                         },
                       ]}
                     >
                       <View style={styles.cellHeader}>
-                        <AppText variant="caption" muted>
+                        <AppText
+                          variant="caption"
+                          allowFontScaling={false}
+                          maxFontSizeMultiplier={1}
+                          numberOfLines={1}
+                          style={[styles.boardTileNumber, { color: boardSkin.tileNumber }]}
+                        >
                           {cell.tile}
                         </AppText>
                         {cell.jumpType ? (
                           <AppText
                             variant="caption"
-                            style={{
-                              color: cell.jumpType === "ladder" ? "#1b7f3b" : "#9b2c2c",
-                            }}
+                            allowFontScaling={false}
+                            maxFontSizeMultiplier={1}
+                            numberOfLines={1}
+                            style={[
+                              styles.boardJumpLabel,
+                              {
+                                color: cell.jumpType === "ladder" ? boardSkin.ladderColor : boardSkin.snakeColor,
+                              },
+                            ]}
                           >
                             {cell.jumpType === "ladder" ? `L${cell.jumpTo}` : `S${cell.jumpTo}`}
                           </AppText>
@@ -333,15 +387,21 @@ export function GamesScreen() {
                               style={[
                                 styles.tileToken,
                                 {
-                                  borderColor: isCurrentTurn ? colors.primary : colors.border,
-                                  backgroundColor: colors.surface,
+                                  borderColor: isCurrentTurn ? colors.primary : boardSkin.tokenBorder,
+                                  backgroundColor: boardSkin.tokenBackground,
                                 },
                               ]}
                             >
                               {player.avatarUrl ? (
                                 <Image source={{ uri: player.avatarUrl }} style={styles.tileTokenImage} />
                               ) : (
-                                <AppText variant="caption" muted>
+                                <AppText
+                                  variant="caption"
+                                  allowFontScaling={false}
+                                  maxFontSizeMultiplier={1}
+                                  numberOfLines={1}
+                                  style={[styles.boardTokenText, { color: boardSkin.tileNumber }]}
+                                >
                                   {player.playerOrder}
                                 </AppText>
                               )}
@@ -349,7 +409,7 @@ export function GamesScreen() {
                           );
                         })}
                         {tilePlayers.length > 3 ? (
-                          <AppText variant="caption" muted>
+                          <AppText variant="caption" allowFontScaling={false} maxFontSizeMultiplier={1} muted>
                             +{tilePlayers.length - 3}
                           </AppText>
                         ) : null}
@@ -544,6 +604,35 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 10,
   },
+  skinSelectionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  skinSelectionChip: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 8,
+    minWidth: 134,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  skinPreview: {
+    width: 32,
+    height: 32,
+    borderWidth: 1,
+    borderRadius: 8,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    overflow: "hidden",
+  },
+  skinPreviewTile: {
+    width: "50%",
+    height: "50%",
+  },
+  skinMeta: {
+    gap: 1,
+  },
   boardGrid: {
     width: "100%",
     aspectRatio: 1,
@@ -555,24 +644,46 @@ const styles = StyleSheet.create({
   },
   boardCell: {
     width: "10%",
+    height: "10%",
     borderWidth: 0.5,
     padding: 2,
     justifyContent: "space-between",
+    overflow: "hidden",
   },
   cellHeader: {
-    alignItems: "flex-start",
-    gap: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 10,
   },
   tileTokenRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 2,
-    flexWrap: "wrap",
+    flexWrap: "nowrap",
+    minHeight: 14,
+  },
+  boardTileNumber: {
+    fontSize: 10,
+    lineHeight: 10,
+    fontWeight: "600",
+  },
+  boardJumpLabel: {
+    fontSize: 9,
+    lineHeight: 10,
+    fontWeight: "700",
+    flexShrink: 1,
+    textAlign: "right",
+  },
+  boardTokenText: {
+    fontSize: 9,
+    lineHeight: 10,
+    fontWeight: "700",
   },
   tileToken: {
-    width: 16,
-    height: 16,
-    borderRadius: 4,
+    width: 14,
+    height: 14,
+    borderRadius: 3,
     borderWidth: 1,
     overflow: "hidden",
     alignItems: "center",
