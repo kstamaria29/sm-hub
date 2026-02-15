@@ -28,10 +28,12 @@ Last updated: 2026-02-15
 - Family-scoped chat room is active.
 - Messages load and refresh correctly.
 - Realtime updates are enabled for ongoing conversation.
+- Messenger-style reactions are implemented via `message_reactions` (👍 ❤️ 😂 😮 😢 😡).
 
 ### Game (Snakes and Ladders)
 
-- Fixed classic mapping board rendered in Games screen.
+- Games tab includes a hub/selector for multiple games.
+- Fixed classic mapping board rendered for Snakes & Ladders.
 - Board skin selector implemented with `Family`, `Tropical`, and `Space` themes.
 - User-selected board skin is persisted in `user_profiles.board_skin_id`.
 - Tropical skin now renders art assets from:
@@ -49,6 +51,17 @@ Temporary testing mode:
 
 - Migration `202602150005_allow_single_player_game_for_testing.sql` allows one-player game starts.
 - This is a temporary testing convenience and should be reverted for production multiplayer rules.
+
+### Game (Word Master)
+
+- Word Master is implemented as a Scrabble-like game with server-authoritative moves.
+- Authoritative lifecycle implemented:
+  - start game (`word-master-start` → `word_master_start_v1`)
+  - play tiles (`word-master-play` → `word_master_play_turn_v1`)
+  - pass (`word-master-pass` → `word_master_pass_turn_v1`)
+  - end game (`word-master-end` → `word_master_end_game_v1`)
+- v1 scoring is simplified (main word(s) only; no multipliers; +50 bingo).
+- 1-player admin testing is supported.
 
 ### Profile and avatar flow
 
@@ -86,6 +99,11 @@ Temporary testing mode:
 - `202602150005_allow_single_player_game_for_testing.sql`
 - `202602150006_end_game_authoritative.sql`
 - `202602150007_user_profile_board_skin.sql`
+- `202602160001_word_master_rooms_and_tables.sql`
+- `202602160002_word_master_start_rpc.sql`
+- `202602160003_word_master_play_turn_rpc.sql`
+- `202602160004_word_master_pass_and_end_rpc.sql`
+- `202602160005_chat_message_reactions.sql`
 
 ## Active Edge Functions
 
@@ -94,6 +112,10 @@ Temporary testing mode:
 - `game-start`
 - `game-roll-move`
 - `game-end`
+- `word-master-start`
+- `word-master-play`
+- `word-master-pass`
+- `word-master-end`
 - `avatar-generate-pack`
 
 Legacy/not used in current app flow:

@@ -13,7 +13,14 @@ type AppTextProps = PropsWithChildren<
 >;
 
 export function AppText({ children, variant = "body", muted = false, style, ...props }: AppTextProps) {
-  const { colors, typography } = useTheme();
+  const { colors, typography, fonts } = useTheme();
+  const type = typography[variant];
+  const fontFamily =
+    variant === "heading" || variant === "title"
+      ? fonts.bold
+      : variant === "body"
+        ? fonts.medium
+        : fonts.regular;
 
   return (
     <Text
@@ -21,7 +28,10 @@ export function AppText({ children, variant = "body", muted = false, style, ...p
         styles.base,
         {
           color: muted ? colors.textMuted : colors.text,
-          fontSize: typography[variant],
+          fontSize: type.size,
+          lineHeight: type.lineHeight,
+          fontWeight: type.weight,
+          fontFamily,
         },
         style,
       ]}
@@ -34,6 +44,6 @@ export function AppText({ children, variant = "body", muted = false, style, ...p
 
 const styles = StyleSheet.create({
   base: {
-    fontWeight: "500",
+    includeFontPadding: false,
   },
 });

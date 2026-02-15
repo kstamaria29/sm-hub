@@ -15,9 +15,14 @@ begin
         'invites',
         'rooms',
         'messages',
+        'message_reactions',
         'games',
         'game_players',
         'game_events',
+        'word_master_games',
+        'word_master_players',
+        'word_master_board_tiles',
+        'word_master_events',
         'user_profiles',
         'avatar_packs'
       ]
@@ -49,9 +54,14 @@ begin
         'invites',
         'rooms',
         'messages',
+        'message_reactions',
         'games',
         'game_players',
         'game_events',
+        'word_master_games',
+        'word_master_players',
+        'word_master_board_tiles',
+        'word_master_events',
         'user_profiles',
         'avatar_packs'
       ]
@@ -95,6 +105,42 @@ begin
       and coalesce(with_check, '') like '%auth.role() = ''service_role''%'
   ) then
     raise exception 'Expected service-role write policy on public.game_players';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'word_master_games'
+      and policyname = 'word_master_games_write_service_role'
+      and coalesce(qual, '') like '%auth.role() = ''service_role''%'
+      and coalesce(with_check, '') like '%auth.role() = ''service_role''%'
+  ) then
+    raise exception 'Expected service-role write policy on public.word_master_games';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'word_master_players'
+      and policyname = 'word_master_players_write_service_role'
+      and coalesce(qual, '') like '%auth.role() = ''service_role''%'
+      and coalesce(with_check, '') like '%auth.role() = ''service_role''%'
+  ) then
+    raise exception 'Expected service-role write policy on public.word_master_players';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'word_master_board_tiles'
+      and policyname = 'word_master_board_tiles_write_service_role'
+      and coalesce(qual, '') like '%auth.role() = ''service_role''%'
+      and coalesce(with_check, '') like '%auth.role() = ''service_role''%'
+  ) then
+    raise exception 'Expected service-role write policy on public.word_master_board_tiles';
   end if;
 
   if not exists (
@@ -153,6 +199,22 @@ begin
     raise exception 'public role must not execute app.reserve_avatar_pack_v1';
   end if;
 
+  if has_function_privilege('public', 'app.word_master_start_v1(uuid,uuid,uuid[],int,int)', 'EXECUTE') then
+    raise exception 'public role must not execute app.word_master_start_v1';
+  end if;
+
+  if has_function_privilege('public', 'app.word_master_play_turn_v1(uuid,uuid,uuid,jsonb)', 'EXECUTE') then
+    raise exception 'public role must not execute app.word_master_play_turn_v1';
+  end if;
+
+  if has_function_privilege('public', 'app.word_master_pass_turn_v1(uuid,uuid,uuid)', 'EXECUTE') then
+    raise exception 'public role must not execute app.word_master_pass_turn_v1';
+  end if;
+
+  if has_function_privilege('public', 'app.word_master_end_game_v1(uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'public role must not execute app.word_master_end_game_v1';
+  end if;
+
   if has_function_privilege('public', 'app.admin_add_family_member_v1(uuid,uuid,uuid,text)', 'EXECUTE') then
     raise exception 'public role must not execute app.admin_add_family_member_v1';
   end if;
@@ -179,6 +241,22 @@ begin
 
   if not has_function_privilege('service_role', 'app.reserve_avatar_pack_v1(uuid,uuid,text,uuid)', 'EXECUTE') then
     raise exception 'service_role must execute app.reserve_avatar_pack_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'app.word_master_start_v1(uuid,uuid,uuid[],int,int)', 'EXECUTE') then
+    raise exception 'service_role must execute app.word_master_start_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'app.word_master_play_turn_v1(uuid,uuid,uuid,jsonb)', 'EXECUTE') then
+    raise exception 'service_role must execute app.word_master_play_turn_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'app.word_master_pass_turn_v1(uuid,uuid,uuid)', 'EXECUTE') then
+    raise exception 'service_role must execute app.word_master_pass_turn_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'app.word_master_end_game_v1(uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'service_role must execute app.word_master_end_game_v1';
   end if;
 
   if not has_function_privilege('service_role', 'app.admin_add_family_member_v1(uuid,uuid,uuid,text)', 'EXECUTE') then
@@ -209,6 +287,22 @@ begin
     raise exception 'public role must not execute public.reserve_avatar_pack_v1';
   end if;
 
+  if has_function_privilege('public', 'public.word_master_start_v1(uuid,uuid,uuid[],int,int)', 'EXECUTE') then
+    raise exception 'public role must not execute public.word_master_start_v1';
+  end if;
+
+  if has_function_privilege('public', 'public.word_master_play_turn_v1(uuid,uuid,uuid,jsonb)', 'EXECUTE') then
+    raise exception 'public role must not execute public.word_master_play_turn_v1';
+  end if;
+
+  if has_function_privilege('public', 'public.word_master_pass_turn_v1(uuid,uuid,uuid)', 'EXECUTE') then
+    raise exception 'public role must not execute public.word_master_pass_turn_v1';
+  end if;
+
+  if has_function_privilege('public', 'public.word_master_end_game_v1(uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'public role must not execute public.word_master_end_game_v1';
+  end if;
+
   if not has_function_privilege('service_role', 'public.bootstrap_family_v1(uuid,text,text)', 'EXECUTE') then
     raise exception 'service_role must execute public.bootstrap_family_v1';
   end if;
@@ -231,6 +325,22 @@ begin
 
   if not has_function_privilege('service_role', 'public.reserve_avatar_pack_v1(uuid,uuid,text,uuid)', 'EXECUTE') then
     raise exception 'service_role must execute public.reserve_avatar_pack_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'public.word_master_start_v1(uuid,uuid,uuid[],int,int)', 'EXECUTE') then
+    raise exception 'service_role must execute public.word_master_start_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'public.word_master_play_turn_v1(uuid,uuid,uuid,jsonb)', 'EXECUTE') then
+    raise exception 'service_role must execute public.word_master_play_turn_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'public.word_master_pass_turn_v1(uuid,uuid,uuid)', 'EXECUTE') then
+    raise exception 'service_role must execute public.word_master_pass_turn_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'public.word_master_end_game_v1(uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'service_role must execute public.word_master_end_game_v1';
   end if;
 
   if not has_function_privilege('authenticated', 'app.is_family_member(uuid)', 'EXECUTE') then
@@ -276,9 +386,27 @@ begin
     select 1
     from pg_indexes
     where schemaname = 'public'
+      and indexname = 'idx_word_master_games_one_open_game_per_room'
+  ) then
+    raise exception 'Missing Word Master one-open-game-per-room index';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_indexes
+    where schemaname = 'public'
       and indexname = 'idx_game_events_roll_request_unique'
   ) then
     raise exception 'Missing game roll request idempotency index';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_indexes
+    where schemaname = 'public'
+      and indexname = 'idx_word_master_events_request_unique'
+  ) then
+    raise exception 'Missing Word Master request idempotency index';
   end if;
 end
 $$;

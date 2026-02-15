@@ -4,12 +4,13 @@ import { StyleSheet, View } from "react-native";
 import { useTheme } from "../theme/ThemeProvider";
 
 export function InfoCard({ children }: PropsWithChildren) {
-  const { colors, radius, spacing } = useTheme();
+  const { colors, radius, spacing, shadows } = useTheme();
 
   return (
     <View
       style={[
         styles.card,
+        shadows.card,
         {
           backgroundColor: colors.surface,
           borderColor: colors.border,

@@ -276,6 +276,36 @@ export type Database = {
         };
         Relationships: [];
       };
+      message_reactions: {
+        Row: {
+          created_at: string;
+          family_id: string;
+          id: number;
+          message_id: number;
+          reaction: string;
+          room_id: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          family_id: string;
+          id?: number;
+          message_id: number;
+          reaction: string;
+          room_id: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          family_id?: string;
+          id?: number;
+          message_id?: number;
+          reaction?: string;
+          room_id?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       rooms: {
         Row: {
           created_at: string;
@@ -335,6 +365,162 @@ export type Database = {
           display_name?: string | null;
           family_id?: string;
           updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      word_master_board_tiles: {
+        Row: {
+          col: number;
+          created_at: string;
+          family_id: string;
+          game_id: string;
+          letter: string;
+          placed_at_turn: number;
+          placed_by: string | null;
+          points: number;
+          row: number;
+        };
+        Insert: {
+          col: number;
+          created_at?: string;
+          family_id: string;
+          game_id: string;
+          letter: string;
+          placed_at_turn: number;
+          placed_by?: string | null;
+          points: number;
+          row: number;
+        };
+        Update: {
+          col?: number;
+          created_at?: string;
+          family_id?: string;
+          game_id?: string;
+          letter?: string;
+          placed_at_turn?: number;
+          placed_by?: string | null;
+          points?: number;
+          row?: number;
+        };
+        Relationships: [];
+      };
+      word_master_events: {
+        Row: {
+          created_at: string;
+          created_by: string | null;
+          event_type: string;
+          family_id: string;
+          game_id: string;
+          id: number;
+          payload: Json;
+        };
+        Insert: {
+          created_at?: string;
+          created_by?: string | null;
+          event_type: string;
+          family_id: string;
+          game_id: string;
+          id?: number;
+          payload?: Json;
+        };
+        Update: {
+          created_at?: string;
+          created_by?: string | null;
+          event_type?: string;
+          family_id?: string;
+          game_id?: string;
+          id?: number;
+          payload?: Json;
+        };
+        Relationships: [];
+      };
+      word_master_games: {
+        Row: {
+          bag: string[];
+          board_size: number;
+          consecutive_passes: number;
+          created_at: string;
+          created_by: string;
+          current_turn_user_id: string | null;
+          family_id: string;
+          finished_at: string | null;
+          id: string;
+          rack_size: number;
+          room_id: string;
+          started_at: string | null;
+          status: "pending" | "active" | "finished" | "cancelled";
+          turn_number: number;
+          updated_at: string;
+          winner_user_id: string | null;
+        };
+        Insert: {
+          bag?: string[];
+          board_size?: number;
+          consecutive_passes?: number;
+          created_at?: string;
+          created_by: string;
+          current_turn_user_id?: string | null;
+          family_id: string;
+          finished_at?: string | null;
+          id?: string;
+          rack_size?: number;
+          room_id: string;
+          started_at?: string | null;
+          status?: "pending" | "active" | "finished" | "cancelled";
+          turn_number?: number;
+          updated_at?: string;
+          winner_user_id?: string | null;
+        };
+        Update: {
+          bag?: string[];
+          board_size?: number;
+          consecutive_passes?: number;
+          created_at?: string;
+          created_by?: string;
+          current_turn_user_id?: string | null;
+          family_id?: string;
+          finished_at?: string | null;
+          id?: string;
+          rack_size?: number;
+          room_id?: string;
+          started_at?: string | null;
+          status?: "pending" | "active" | "finished" | "cancelled";
+          turn_number?: number;
+          updated_at?: string;
+          winner_user_id?: string | null;
+        };
+        Relationships: [];
+      };
+      word_master_players: {
+        Row: {
+          created_at: string;
+          family_id: string;
+          game_id: string;
+          id: string;
+          player_order: number;
+          rack: string[];
+          score: number;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          family_id: string;
+          game_id: string;
+          id?: string;
+          player_order: number;
+          rack?: string[];
+          score?: number;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          family_id?: string;
+          game_id?: string;
+          id?: string;
+          player_order?: number;
+          rack?: string[];
+          score?: number;
           user_id?: string;
         };
         Relationships: [];

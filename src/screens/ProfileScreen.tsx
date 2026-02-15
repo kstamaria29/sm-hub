@@ -6,6 +6,7 @@ import * as ImagePicker from "expo-image-picker";
 
 import {
   buildAvatarOriginalPath,
+  clearAvatarSignedUrlCache,
   createSignedAvatarUrl,
   createSignedOriginalAvatarUrl,
   findExistingOriginalAvatarPath,
@@ -809,6 +810,8 @@ export function ProfileScreen() {
     const { error } = await supabase.auth.signOut();
     if (error) {
       setSignOutError(error.message);
+    } else {
+      clearAvatarSignedUrlCache();
     }
 
     setIsSigningOut(false);

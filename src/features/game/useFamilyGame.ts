@@ -57,6 +57,7 @@ export type FamilyGameState = {
   roomTitle: string;
   game: GameRow | null;
   boardSkinId: BoardSkinId;
+  cinematicsEnabled: boolean;
   familyMembers: FamilyMemberOption[];
   players: GamePlayerView[];
   events: GameEventView[];
@@ -188,7 +189,7 @@ async function parseFunctionInvokeError(error: { message: string; context?: Resp
   return error.message;
 }
 
-export function useFamilyGame(): FamilyGameState {
+export function useFamilyGame(roomSlug = "snakes-ladders"): FamilyGameState {
   const supabase = useMemo(() => getSupabaseClient(), []);
 
   const [loading, setLoading] = useState(true);
@@ -204,6 +205,7 @@ export function useFamilyGame(): FamilyGameState {
   const [roomTitle, setRoomTitle] = useState("Snakes and Ladders");
   const [game, setGame] = useState<GameRow | null>(null);
   const [boardSkinId, setBoardSkinId] = useState<BoardSkinId>(DEFAULT_BOARD_SKIN_ID);
+  const [cinematicsEnabled, setCinematicsEnabled] = useState(true);
   const [familyMembers, setFamilyMembers] = useState<FamilyMemberOption[]>([]);
   const [players, setPlayers] = useState<GamePlayerView[]>([]);
   const [events, setEvents] = useState<GameEventView[]>([]);
@@ -213,6 +215,7 @@ export function useFamilyGame(): FamilyGameState {
       setLoading(false);
       setError("Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to enable games.");
       setBoardSkinId(DEFAULT_BOARD_SKIN_ID);
+      setCinematicsEnabled(true);
       setFamilyMembers([]);
       return;
     }
@@ -225,6 +228,7 @@ export function useFamilyGame(): FamilyGameState {
       setLoading(false);
       setError(sessionError.message);
       setBoardSkinId(DEFAULT_BOARD_SKIN_ID);
+      setCinematicsEnabled(true);
       setFamilyMembers([]);
       return;
     }
@@ -234,6 +238,7 @@ export function useFamilyGame(): FamilyGameState {
       setLoading(false);
       setError("Sign in is required before games can load.");
       setBoardSkinId(DEFAULT_BOARD_SKIN_ID);
+      setCinematicsEnabled(true);
       setFamilyMembers([]);
       return;
     }
@@ -242,7 +247,7 @@ export function useFamilyGame(): FamilyGameState {
 
     const { data: profile, error: profileError } = await supabase
       .from("user_profiles")
-      .select("family_id,board_skin_id")
+      .select("family_id,board_skin_id,cinematics_enabled")
       .eq("user_id", sessionUser.id)
       .maybeSingle();
 
@@ -250,6 +255,7 @@ export function useFamilyGame(): FamilyGameState {
       setLoading(false);
       setError(profileError.message);
       setBoardSkinId(DEFAULT_BOARD_SKIN_ID);
+      setCinematicsEnabled(true);
       setFamilyMembers([]);
       return;
     }
@@ -258,12 +264,14 @@ export function useFamilyGame(): FamilyGameState {
       setLoading(false);
       setError("No family found for this user profile.");
       setBoardSkinId(DEFAULT_BOARD_SKIN_ID);
+      setCinematicsEnabled(true);
       setFamilyMembers([]);
       return;
     }
 
     setFamilyId(profile.family_id);
     setBoardSkinId(isBoardSkinId(profile.board_skin_id) ? profile.board_skin_id : DEFAULT_BOARD_SKIN_ID);
+    setCinematicsEnabled(profile.cinematics_enabled ?? true);
 
     const { data: membership, error: membershipError } = await supabase
       .from("family_members")
@@ -328,6 +336,7 @@ export function useFamilyGame(): FamilyGameState {
       .select("id,title")
       .eq("family_id", profile.family_id)
       .eq("kind", "game")
+      .eq("slug", roomSlug)
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
@@ -507,7 +516,7 @@ export function useFamilyGame(): FamilyGameState {
       })),
     );
     setLoading(false);
-  }, [supabase]);
+  }, [roomSlug, supabase]);
 
   useEffect(() => {
     void load();
@@ -726,6 +735,7 @@ export function useFamilyGame(): FamilyGameState {
     roomTitle,
     game,
     boardSkinId,
+    cinematicsEnabled,
     familyMembers,
     players,
     events,

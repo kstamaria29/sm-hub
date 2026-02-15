@@ -7,9 +7,14 @@
 - `invites`: legacy invite table (not used in current app flow)
 - `rooms`: family-scoped rooms (`chat`, `game`)
 - `messages`: room messages
+- `message_reactions`: per-user reactions for chat messages (Messenger-style)
 - `games`: game session state (status, turn pointer, mapping id)
 - `game_players`: per-game participants and token metadata
 - `game_events`: immutable event log for deterministic replay
+- `word_master_games`: Word Master game session state (turn pointer, bag, config)
+- `word_master_players`: Word Master players + scores + racks (v1)
+- `word_master_board_tiles`: Word Master board tiles (authoritative placements)
+- `word_master_events`: Word Master immutable event log
 - `user_profiles`: display data and selected avatar settings
 - `avatar_packs`: generated pack metadata and active version
 
@@ -19,9 +24,14 @@
 - `families 1 -> many invites` (legacy)
 - `families 1 -> many rooms`
 - `rooms 1 -> many messages`
+- `messages 1 -> many message_reactions`
 - `rooms 1 -> many games` (for game rooms)
 - `games 1 -> many game_players`
 - `games 1 -> many game_events`
+- `rooms 1 -> many word_master_games`
+- `word_master_games 1 -> many word_master_players`
+- `word_master_games 1 -> many word_master_board_tiles`
+- `word_master_games 1 -> many word_master_events`
 - `user_profiles 1 -> many avatar_packs`
 
 ## Notes
@@ -31,6 +41,11 @@
 - Key authoritative game event types in current flow:
   - `game_started`
   - `roll_move`
+  - `game_ended`
+- Word Master event types:
+  - `game_started`
+  - `turn_played`
+  - `turn_passed`
   - `game_ended`
 - Public RPC wrapper functions are exposed for PostgREST/Edge invocation and delegate to `app.*` functions with hardened execution context.
 - `user_profiles.cinematics_enabled` controls cinematic camera behavior in game rendering.

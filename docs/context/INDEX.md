@@ -15,6 +15,12 @@ This file is the context registry for v1. Start here before editing product, gam
 - `docs/context/game/snakes-and-ladders/skins.md` - board skin asset pack specification
 - `docs/context/game/snakes-and-ladders/avatar-expressions.md` - expression trigger matrix
 
+## Game: Word Master
+
+- `docs/context/game/word-master/rules.md` - turn rules, scoring (v1), and validation
+- `docs/context/game/word-master/ui-layout.md` - portrait-first board + rack layout
+- `docs/context/game/word-master/data-model.md` - tables and authoritative RPCs
+
 ## Architecture
 
 - `docs/context/architecture/overview.md` - high-level system responsibilities

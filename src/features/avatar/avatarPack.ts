@@ -20,6 +20,45 @@ export const AVATAR_ORIGINALS_BUCKET = "avatar-originals";
 export type AvatarExpression = (typeof AVATAR_EXPRESSIONS)[number];
 export type AvatarStyleId = (typeof AVATAR_STYLE_OPTIONS)[number]["id"];
 
+type SignedUrlCacheEntry = {
+  signedUrl: string;
+  expiresAtMs: number;
+};
+
+const SIGNED_URL_REFRESH_BUFFER_MS = 2 * 60 * 1000;
+const signedUrlCache = new Map<string, SignedUrlCacheEntry>();
+
+function buildSignedUrlCacheKey(bucket: string, storagePath: string): string {
+  return `${bucket}:${storagePath}`;
+}
+
+function getCachedSignedUrl(bucket: string, storagePath: string): string | null {
+  const key = buildSignedUrlCacheKey(bucket, storagePath);
+  const cached = signedUrlCache.get(key);
+  if (!cached) {
+    return null;
+  }
+
+  if (cached.expiresAtMs - Date.now() <= SIGNED_URL_REFRESH_BUFFER_MS) {
+    signedUrlCache.delete(key);
+    return null;
+  }
+
+  return cached.signedUrl;
+}
+
+function setCachedSignedUrl(bucket: string, storagePath: string, signedUrl: string, expiresInSeconds: number): void {
+  const key = buildSignedUrlCacheKey(bucket, storagePath);
+  signedUrlCache.set(key, {
+    signedUrl,
+    expiresAtMs: Date.now() + expiresInSeconds * 1000,
+  });
+}
+
+export function clearAvatarSignedUrlCache(): void {
+  signedUrlCache.clear();
+}
+
 export function avatarExpressionLabel(expression: AvatarExpression): string {
   switch (expression) {
     case "neutral":
@@ -40,11 +79,17 @@ export async function createSignedAvatarUrl(
   storagePath: string,
   expiresInSeconds = 60 * 60,
 ): Promise<string | null> {
+  const cachedSignedUrl = getCachedSignedUrl(AVATAR_PACKS_BUCKET, storagePath);
+  if (cachedSignedUrl) {
+    return cachedSignedUrl;
+  }
+
   const { data, error } = await supabase.storage.from(AVATAR_PACKS_BUCKET).createSignedUrl(storagePath, expiresInSeconds);
   if (error || !data?.signedUrl) {
     return null;
   }
 
+  setCachedSignedUrl(AVATAR_PACKS_BUCKET, storagePath, data.signedUrl, expiresInSeconds);
   return data.signedUrl;
 }
 
@@ -53,6 +98,11 @@ export async function createSignedOriginalAvatarUrl(
   storagePath: string,
   expiresInSeconds = 60 * 60,
 ): Promise<string | null> {
+  const cachedSignedUrl = getCachedSignedUrl(AVATAR_ORIGINALS_BUCKET, storagePath);
+  if (cachedSignedUrl) {
+    return cachedSignedUrl;
+  }
+
   const { data, error } = await supabase
     .storage
     .from(AVATAR_ORIGINALS_BUCKET)
@@ -62,6 +112,7 @@ export async function createSignedOriginalAvatarUrl(
     return null;
   }
 
+  setCachedSignedUrl(AVATAR_ORIGINALS_BUCKET, storagePath, data.signedUrl, expiresInSeconds);
   return data.signedUrl;
 }
 

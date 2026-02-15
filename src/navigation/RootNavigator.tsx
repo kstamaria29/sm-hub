@@ -48,7 +48,7 @@ function AppTabs() {
 }
 
 export function RootNavigator() {
-  const { colors } = useTheme();
+  const { colors, fonts } = useTheme();
   const onboardingGate = useOnboardingGate();
 
   const navigationTheme: NavigationTheme = {
@@ -63,19 +63,19 @@ export function RootNavigator() {
     },
     fonts: {
       regular: {
-        fontFamily: "System",
+        fontFamily: fonts.regular,
         fontWeight: "400",
       },
       medium: {
-        fontFamily: "System",
+        fontFamily: fonts.medium,
         fontWeight: "500",
       },
       bold: {
-        fontFamily: "System",
+        fontFamily: fonts.bold,
         fontWeight: "700",
       },
       heavy: {
-        fontFamily: "System",
+        fontFamily: fonts.bold,
         fontWeight: "800",
       },
     },

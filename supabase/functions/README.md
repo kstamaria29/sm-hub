@@ -6,6 +6,10 @@
 - `game-start`: admin starts a new authoritative Snakes & Ladders session in the family game room
 - `game-roll-move`: authoritative Snakes & Ladders turn executor
 - `game-end`: admin ends/cancels the current authoritative game session
+- `word-master-start`: admin starts a new authoritative Word Master session
+- `word-master-play`: authoritative Word Master turn executor (tile placements)
+- `word-master-pass`: authoritative Word Master pass executor
+- `word-master-end`: admin ends/cancels the current authoritative Word Master session
 - `avatar-generate-pack`: server-side avatar pack generation orchestrator (neutral-first supported; uses uploaded original profile image as reference)
 
 All functions validate bearer auth and call transactional server logic via service-role RPC.

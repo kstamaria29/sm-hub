@@ -15,7 +15,9 @@
 - Family and membership tables: admins manage membership; members can read own family records.
 - Invites table remains legacy-only and is not used in the app flow.
 - Chat (`rooms`, `messages`): members can read/write inside their family rooms.
+- Chat reactions (`message_reactions`): members can read family reactions and write/update/delete their own reaction per message.
 - Games (`games`, `game_players`, `game_events`): members read; authoritative writes happen through Edge Functions.
+- Word Master (`word_master_*`): members read; authoritative writes happen through Edge Functions.
 - Avatar metadata (`user_profiles`, `avatar_packs`): members manage own profile; family members can read avatar pack metadata needed for rendering.
 
 ## Function Privilege Model

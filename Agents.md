@@ -8,6 +8,7 @@ We are building a private, admin-managed family app (8-10 members, ages 30-65) f
 - Admin-provisioned members (admin enters member email, system generates temporary password)
 - Family chat (real-time)
 - Snakes & Ladders (turn-based, authoritative state)
+- Word Master (Scrabble-like, turn-based, authoritative state)
 - Cartoon avatar packs (transparent PNG) used as game tokens
 
 Current implementation snapshot:
@@ -15,12 +16,10 @@ Current implementation snapshot:
 - Onboarding supports email/password `Create Account` + `Sign In`, then `Create Family`.
 - Family creation runs through Edge Function `family-bootstrap`.
 - Admin member creation runs through Edge Function `family-member-create` and returns temporary credentials.
-- Chat room is functional with realtime message timeline.
-- Games screen supports:
-  - authoritative game start (`game-start`)
-  - authoritative roll/move (`game-roll-move`)
-  - authoritative game end (`game-end`)
-  - board grid rendering, event banners, and expression-aware player tokens
+- Chat room is functional with realtime message timeline + reactions.
+- Games screen supports a game hub with selections:
+  - Snakes & Ladders (authoritative start/roll/end; board grid rendering, event banners, expression-aware tokens)
+  - Word Master (authoritative start/play/pass/end; board + rack + scoring)
 - Settings/Profile supports:
   - display name updates
   - cinematics toggle
@@ -91,6 +90,7 @@ Out of scope for v1:
 
 - No direct-to-DB writes from the client for authoritative game actions.
   - Client may write chat messages and non-sensitive profile fields if allowed by RLS.
+  - Client may write chat reactions if allowed by RLS.
   - Dice rolls / moves must go through an Edge Function.
 - If a stack/tool choice changes, add/update an ADR under `docs/context/adr/`.
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Session } from "@supabase/supabase-js";
 
+import { clearAvatarSignedUrlCache } from "../avatar/avatarPack";
 import { getSupabaseClient, isSupabaseConfigured } from "../../lib/supabase";
 
 type UserProfile = {
@@ -471,6 +472,7 @@ export function useOnboardingGate(): OnboardingGateState {
         return false;
       }
 
+      clearAvatarSignedUrlCache();
       return true;
     });
   }, [runAction, supabase]);

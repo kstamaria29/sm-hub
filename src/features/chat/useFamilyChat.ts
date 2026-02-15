@@ -16,6 +16,20 @@ export type ChatMessage = {
   created_at: string;
 };
 
+export type ChatMessageReaction = {
+  id: number;
+  message_id: number;
+  user_id: string;
+  reaction: string;
+  created_at: string;
+};
+
+export type ChatMessageReactionsSummary = {
+  counts: Record<string, number>;
+  myReaction: string | null;
+  total: number;
+};
+
 type UserProfileName = {
   user_id: string;
   display_name: string | null;
@@ -41,6 +55,7 @@ export function useFamilyChat() {
   const [error, setError] = useState<string | null>(null);
   const [room, setRoom] = useState<ChatRoom | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [reactionsByMessageId, setReactionsByMessageId] = useState<Map<number, ChatMessageReactionsSummary>>(new Map());
   const [senderNames, setSenderNames] = useState<Map<string, string>>(new Map());
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
 
@@ -127,6 +142,50 @@ export function useFamilyChat() {
     const loadedMessages = (messageRows ?? []) as ChatMessage[];
     setMessages(loadedMessages);
 
+    const messageIds = loadedMessages.map((message) => message.id);
+    if (messageIds.length > 0) {
+      const { data: reactionRows, error: reactionsError } = await supabase
+        .from("message_reactions")
+        .select("id,message_id,user_id,reaction,created_at")
+        .eq("room_id", chatRoom.id)
+        .in("message_id", messageIds);
+
+      if (reactionsError) {
+        setLoading(false);
+        setError(reactionsError.message);
+        return;
+      }
+
+      const rows = (reactionRows ?? []) as ChatMessageReaction[];
+      const countsByMessage = new Map<number, Record<string, number>>();
+      const myReactionByMessage = new Map<number, string>();
+
+      for (const row of rows) {
+        const counts = countsByMessage.get(row.message_id) ?? {};
+        counts[row.reaction] = (counts[row.reaction] ?? 0) + 1;
+        countsByMessage.set(row.message_id, counts);
+
+        if (row.user_id === sessionUser.id) {
+          myReactionByMessage.set(row.message_id, row.reaction);
+        }
+      }
+
+      const next = new Map<number, ChatMessageReactionsSummary>();
+      for (const messageId of messageIds) {
+        const counts = countsByMessage.get(messageId) ?? {};
+        const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+        next.set(messageId, {
+          counts,
+          myReaction: myReactionByMessage.get(messageId) ?? null,
+          total,
+        });
+      }
+
+      setReactionsByMessageId(next);
+    } else {
+      setReactionsByMessageId(new Map());
+    }
+
     const senderIds = Array.from(new Set(loadedMessages.map((message) => message.sender_id)));
     if (senderIds.length > 0) {
       const { data: profiles, error: profileNamesError } = await supabase
@@ -208,12 +267,73 @@ export function useFamilyChat() {
           });
         },
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "message_reactions",
+          filter: `room_id=eq.${room.id}`,
+        },
+        () => {
+          void load();
+        },
+      )
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [supabase, room?.id]);
+  }, [load, supabase, room?.id]);
+
+  const setReaction = useCallback(
+    async (messageId: number, reaction: string) => {
+      const normalized = reaction.trim();
+      if (!normalized || !supabase || !room || !sessionUserId) {
+        return false;
+      }
+
+      const existing = reactionsByMessageId.get(messageId)?.myReaction ?? null;
+      if (existing === normalized) {
+        const { error: deleteError } = await supabase
+          .from("message_reactions")
+          .delete()
+          .eq("room_id", room.id)
+          .eq("message_id", messageId)
+          .eq("user_id", sessionUserId);
+
+        if (deleteError) {
+          setError(deleteError.message);
+          return false;
+        }
+
+        await load();
+        return true;
+      }
+
+      const { error: upsertError } = await supabase
+        .from("message_reactions")
+        .upsert(
+          {
+            family_id: room.family_id,
+            room_id: room.id,
+            message_id: messageId,
+            user_id: sessionUserId,
+            reaction: normalized,
+          },
+          { onConflict: "message_id,user_id" },
+        );
+
+      if (upsertError) {
+        setError(upsertError.message);
+        return false;
+      }
+
+      await load();
+      return true;
+    },
+    [load, reactionsByMessageId, room, sessionUserId, supabase],
+  );
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -251,7 +371,10 @@ export function useFamilyChat() {
     error,
     roomTitle: room?.title ?? "Family Chat",
     messages,
+    reactionsByMessageId,
     senderNames,
+    currentUserId: sessionUserId,
+    setReaction,
     sendMessage,
     refresh: load,
   };
