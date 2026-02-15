@@ -157,7 +157,9 @@ export function GamesScreen() {
   const showJumpTextOnTiles = !isNarrowPhone;
   const showOverflowTileCount = !isNarrowPhone;
   const maxVisibleTileTokens = isNarrowPhone ? 2 : 3;
-  const useBoardArtLayers = Boolean(boardSkin.boardBaseImage || boardSkin.overlaySnakesLaddersImage);
+  const hasBoardBaseArt = Boolean(boardSkin.boardBaseImage);
+  const boardOverlayOpacity = boardSkin.overlayOpacity ?? 0.72;
+  const boardOverlayInset = boardSkin.overlayInset ?? 0;
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
 
   const currentTurnLabel = (() => {
@@ -353,21 +355,39 @@ export function GamesScreen() {
                 </View>
               ) : null}
 
-              <View style={[styles.boardGrid, { borderColor: boardSkin.boardBorder, backgroundColor: boardSkin.boardBackground }]}>
+              <View
+                style={[
+                  styles.boardGrid,
+                  {
+                    borderColor: boardSkin.boardBorder,
+                    backgroundColor: boardSkin.boardBackground,
+                    borderWidth: hasBoardBaseArt ? 0 : 1,
+                  },
+                ]}
+              >
                 {boardSkin.boardBaseImage ? (
                   <Image
                     pointerEvents="none"
                     source={boardSkin.boardBaseImage}
                     style={styles.boardArtLayer}
-                    resizeMode="cover"
+                    resizeMode="stretch"
                   />
                 ) : null}
                 {boardSkin.overlaySnakesLaddersImage ? (
                   <Image
                     pointerEvents="none"
                     source={boardSkin.overlaySnakesLaddersImage}
-                    style={[styles.boardArtLayer, styles.boardOverlayArtLayer]}
-                    resizeMode="cover"
+                    style={[
+                      styles.boardArtLayer,
+                      {
+                        opacity: boardOverlayOpacity,
+                        top: boardOverlayInset,
+                        right: boardOverlayInset,
+                        bottom: boardOverlayInset,
+                        left: boardOverlayInset,
+                      },
+                    ]}
+                    resizeMode="stretch"
                   />
                 ) : null}
 
@@ -384,8 +404,9 @@ export function GamesScreen() {
                               styles.boardCell,
                               isNarrowPhone ? styles.boardCellNarrow : null,
                               {
-                                borderColor: boardSkin.tileBorder,
-                                backgroundColor: useBoardArtLayers
+                                borderColor: hasBoardBaseArt ? "transparent" : boardSkin.tileBorder,
+                                borderWidth: hasBoardBaseArt ? 0 : StyleSheet.hairlineWidth,
+                                backgroundColor: hasBoardBaseArt
                                   ? "transparent"
                                   : (cell.row + cell.column) % 2 === 0
                                     ? boardSkin.tileLight
@@ -718,19 +739,28 @@ const styles = StyleSheet.create({
     width: "100%",
     aspectRatio: 1,
     flexDirection: "column",
-    borderWidth: 1,
-    borderRadius: 14,
+    borderWidth: 0,
+    borderRadius: 0,
     overflow: "hidden",
     position: "relative",
   },
   boardArtLayer: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  boardOverlayArtLayer: {
-    opacity: 0.78,
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
   },
   boardContentLayer: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
     zIndex: 1,
   },
   boardRow: {
@@ -739,7 +769,6 @@ const styles = StyleSheet.create({
   },
   boardCell: {
     flex: 1,
-    borderWidth: 0.5,
     padding: 2,
     justifyContent: "space-between",
     overflow: "hidden",

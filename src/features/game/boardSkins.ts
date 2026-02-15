@@ -11,6 +11,8 @@ export type BoardSkinTheme = {
   thumbnailImage?: ImageSourcePropType;
   boardBaseImage?: ImageSourcePropType;
   overlaySnakesLaddersImage?: ImageSourcePropType;
+  overlayOpacity?: number;
+  overlayInset?: number;
   boardBackground: string;
   boardBorder: string;
   tileLight: string;
@@ -30,6 +32,11 @@ export const BOARD_SKINS: Record<BoardSkinId, BoardSkinTheme> = {
     id: "family",
     label: "Family",
     subtitle: "Warm and clear",
+    thumbnailImage: require("../../../assets/boards/family/thumbnail_v1.png"),
+    boardBaseImage: require("../../../assets/boards/family/board_base_v1.png"),
+    overlaySnakesLaddersImage: require("../../../assets/boards/family/overlay_snakes_ladders_v1.png"),
+    overlayOpacity: 1,
+    overlayInset: 0,
     boardBackground: "#fff7eb",
     boardBorder: "#f0cc9c",
     tileLight: "#fffdf8",
@@ -45,9 +52,11 @@ export const BOARD_SKINS: Record<BoardSkinId, BoardSkinTheme> = {
     id: "tropical",
     label: "Tropical",
     subtitle: "Fresh and bright",
-    thumbnailImage: require("../../../assets/boards/tropical/thumbnail.png"),
-    boardBaseImage: require("../../../assets/boards/tropical/board_base.png"),
-    overlaySnakesLaddersImage: require("../../../assets/boards/tropical/overlay_snakes_ladders.png"),
+    thumbnailImage: require("../../../assets/boards/tropical/thumbnail_v3.png"),
+    boardBaseImage: require("../../../assets/boards/tropical/board_base_v3.png"),
+    overlaySnakesLaddersImage: require("../../../assets/boards/tropical/overlay_snakes_ladders_v3.png"),
+    overlayOpacity: 1,
+    overlayInset: 0,
     boardBackground: "#e9fbf3",
     boardBorder: "#a3ddbe",
     tileLight: "#f7fff9",
