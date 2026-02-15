@@ -34,6 +34,10 @@ Last updated: 2026-02-15
 - Fixed classic mapping board rendered in Games screen.
 - Board skin selector implemented with `Family`, `Tropical`, and `Space` themes.
 - User-selected board skin is persisted in `user_profiles.board_skin_id`.
+- Tropical skin now renders art assets from:
+  - `assets/boards/tropical/board_base.png`
+  - `assets/boards/tropical/overlay_snakes_ladders.png`
+  - `assets/boards/tropical/thumbnail.png`
 - Authoritative game lifecycle implemented:
   - start game (`game-start` -> `start_game_v1`)
   - roll turn (`game-roll-move` -> `roll_game_turn_v1`)

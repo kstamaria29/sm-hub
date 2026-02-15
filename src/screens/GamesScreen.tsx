@@ -13,6 +13,9 @@ import { Screen } from "../ui/primitives/Screen";
 import { useTheme } from "../ui/theme/ThemeProvider";
 
 const BOARD_CELLS = buildClassicBoardCells();
+const BOARD_ROWS = Array.from({ length: 10 }, (_, rowIndex) =>
+  BOARD_CELLS.slice(rowIndex * 10, rowIndex * 10 + 10),
+);
 
 function asJsonObject(value: Json): Record<string, Json> | null {
   if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -149,6 +152,12 @@ export function GamesScreen() {
   const gameState = useFamilyGame();
   const boardSkin = BOARD_SKINS[gameState.boardSkinId];
   const isLandscape = width > height;
+  const isNarrowPhone = !isLandscape && width < 390;
+  const boardScreenHorizontalPadding = isNarrowPhone ? spacing.sm : spacing.md;
+  const showJumpTextOnTiles = !isNarrowPhone;
+  const showOverflowTileCount = !isNarrowPhone;
+  const maxVisibleTileTokens = isNarrowPhone ? 2 : 3;
+  const useBoardArtLayers = Boolean(boardSkin.boardBaseImage || boardSkin.overlaySnakesLaddersImage);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
 
   const currentTurnLabel = (() => {
@@ -243,9 +252,17 @@ export function GamesScreen() {
   })();
 
   return (
-    <Screen>
+    <Screen padded={false}>
       <ScrollView
-        contentContainerStyle={[styles.content, { gap: spacing.md, paddingBottom: spacing.xl }]}
+        contentContainerStyle={[
+          styles.content,
+          {
+            gap: spacing.md,
+            paddingHorizontal: boardScreenHorizontalPadding,
+            paddingTop: spacing.md,
+            paddingBottom: spacing.xl,
+          },
+        ]}
         refreshControl={<RefreshControl refreshing={gameState.loading} onRefresh={() => void gameState.refresh()} />}
       >
         <AppText variant="heading">Games</AppText>
@@ -299,10 +316,16 @@ export function GamesScreen() {
                       ]}
                     >
                       <View style={[styles.skinPreview, { borderColor: skin.boardBorder, backgroundColor: skin.boardBackground }]}>
-                        <View style={[styles.skinPreviewTile, { backgroundColor: skin.tileLight }]} />
-                        <View style={[styles.skinPreviewTile, { backgroundColor: skin.tileDark }]} />
-                        <View style={[styles.skinPreviewTile, { backgroundColor: skin.tileDark }]} />
-                        <View style={[styles.skinPreviewTile, { backgroundColor: skin.tileLight }]} />
+                        {skin.thumbnailImage ? (
+                          <Image source={skin.thumbnailImage} style={styles.skinPreviewImage} resizeMode="cover" />
+                        ) : (
+                          <>
+                            <View style={[styles.skinPreviewTile, { backgroundColor: skin.tileLight }]} />
+                            <View style={[styles.skinPreviewTile, { backgroundColor: skin.tileDark }]} />
+                            <View style={[styles.skinPreviewTile, { backgroundColor: skin.tileDark }]} />
+                            <View style={[styles.skinPreviewTile, { backgroundColor: skin.tileLight }]} />
+                          </>
+                        )}
                       </View>
                       <View style={styles.skinMeta}>
                         <AppText variant="caption">{skin.label}</AppText>
@@ -331,92 +354,146 @@ export function GamesScreen() {
               ) : null}
 
               <View style={[styles.boardGrid, { borderColor: boardSkin.boardBorder, backgroundColor: boardSkin.boardBackground }]}>
-                {BOARD_CELLS.map((cell) => {
-                  const tilePlayers = playersByTile.get(cell.tile) ?? [];
+                {boardSkin.boardBaseImage ? (
+                  <Image
+                    pointerEvents="none"
+                    source={boardSkin.boardBaseImage}
+                    style={styles.boardArtLayer}
+                    resizeMode="cover"
+                  />
+                ) : null}
+                {boardSkin.overlaySnakesLaddersImage ? (
+                  <Image
+                    pointerEvents="none"
+                    source={boardSkin.overlaySnakesLaddersImage}
+                    style={[styles.boardArtLayer, styles.boardOverlayArtLayer]}
+                    resizeMode="cover"
+                  />
+                ) : null}
 
-                  return (
-                    <View
-                      key={cell.tile}
-                      style={[
-                        styles.boardCell,
-                        {
-                          borderColor: boardSkin.tileBorder,
-                          backgroundColor: (cell.row + cell.column) % 2 === 0 ? boardSkin.tileLight : boardSkin.tileDark,
-                        },
-                      ]}
-                    >
-                      <View style={styles.cellHeader}>
-                        <AppText
-                          variant="caption"
-                          allowFontScaling={false}
-                          maxFontSizeMultiplier={1}
-                          numberOfLines={1}
-                          style={[styles.boardTileNumber, { color: boardSkin.tileNumber }]}
-                        >
-                          {cell.tile}
-                        </AppText>
-                        {cell.jumpType ? (
-                          <AppText
-                            variant="caption"
-                            allowFontScaling={false}
-                            maxFontSizeMultiplier={1}
-                            numberOfLines={1}
+                <View style={styles.boardContentLayer}>
+                  {BOARD_ROWS.map((rowCells, rowIndex) => (
+                    <View key={`row-${rowIndex}`} style={styles.boardRow}>
+                      {rowCells.map((cell) => {
+                        const tilePlayers = playersByTile.get(cell.tile) ?? [];
+
+                        return (
+                          <View
+                            key={cell.tile}
                             style={[
-                              styles.boardJumpLabel,
+                              styles.boardCell,
+                              isNarrowPhone ? styles.boardCellNarrow : null,
                               {
-                                color: cell.jumpType === "ladder" ? boardSkin.ladderColor : boardSkin.snakeColor,
+                                borderColor: boardSkin.tileBorder,
+                                backgroundColor: useBoardArtLayers
+                                  ? "transparent"
+                                  : (cell.row + cell.column) % 2 === 0
+                                    ? boardSkin.tileLight
+                                    : boardSkin.tileDark,
                               },
                             ]}
                           >
-                            {cell.jumpType === "ladder" ? `L${cell.jumpTo}` : `S${cell.jumpTo}`}
-                          </AppText>
-                        ) : null}
-                      </View>
+                            <View style={styles.cellHeader}>
+                              <AppText
+                                variant="caption"
+                                allowFontScaling={false}
+                                maxFontSizeMultiplier={1}
+                                numberOfLines={1}
+                                style={[
+                                  styles.boardTileNumber,
+                                  isNarrowPhone ? styles.boardTileNumberNarrow : null,
+                                  { color: boardSkin.tileNumber },
+                                ]}
+                              >
+                                {cell.tile}
+                              </AppText>
+                              {cell.jumpType ? (
+                                showJumpTextOnTiles ? (
+                                  <AppText
+                                    variant="caption"
+                                    allowFontScaling={false}
+                                    maxFontSizeMultiplier={1}
+                                    numberOfLines={1}
+                                    style={[
+                                      styles.boardJumpLabel,
+                                      isNarrowPhone ? styles.boardJumpLabelNarrow : null,
+                                      {
+                                        color: cell.jumpType === "ladder" ? boardSkin.ladderColor : boardSkin.snakeColor,
+                                      },
+                                    ]}
+                                  >
+                                    {cell.jumpType === "ladder" ? `L${cell.jumpTo}` : `S${cell.jumpTo}`}
+                                  </AppText>
+                                ) : (
+                                  <View
+                                    style={[
+                                      styles.boardJumpDot,
+                                      {
+                                        backgroundColor: cell.jumpType === "ladder" ? boardSkin.ladderColor : boardSkin.snakeColor,
+                                      },
+                                    ]}
+                                  />
+                                )
+                              ) : null}
+                            </View>
 
-                      <View style={styles.tileTokenRow}>
-                        {tilePlayers.slice(0, 3).map((player) => {
-                          const isCurrentTurn = Boolean(
-                            gameState.game?.status === "active" &&
-                              gameState.game.current_turn_user_id &&
-                              player.userId === gameState.game.current_turn_user_id,
-                          );
+                            <View style={styles.tileTokenRow}>
+                              {tilePlayers.slice(0, maxVisibleTileTokens).map((player) => {
+                                const isCurrentTurn = Boolean(
+                                  gameState.game?.status === "active" &&
+                                    gameState.game.current_turn_user_id &&
+                                    player.userId === gameState.game.current_turn_user_id,
+                                );
 
-                          return (
-                            <View
-                              key={player.userId}
-                              style={[
-                                styles.tileToken,
-                                {
-                                  borderColor: isCurrentTurn ? colors.primary : boardSkin.tokenBorder,
-                                  backgroundColor: boardSkin.tokenBackground,
-                                },
-                              ]}
-                            >
-                              {player.avatarUrl ? (
-                                <Image source={{ uri: player.avatarUrl }} style={styles.tileTokenImage} />
-                              ) : (
+                                return (
+                                  <View
+                                    key={player.userId}
+                                    style={[
+                                      styles.tileToken,
+                                      isNarrowPhone ? styles.tileTokenNarrow : null,
+                                      {
+                                        borderColor: isCurrentTurn ? colors.primary : boardSkin.tokenBorder,
+                                        backgroundColor: boardSkin.tokenBackground,
+                                      },
+                                    ]}
+                                  >
+                                    {player.avatarUrl ? (
+                                      <Image source={{ uri: player.avatarUrl }} style={styles.tileTokenImage} />
+                                    ) : (
+                                      <AppText
+                                        variant="caption"
+                                        allowFontScaling={false}
+                                        maxFontSizeMultiplier={1}
+                                        numberOfLines={1}
+                                        style={[
+                                          styles.boardTokenText,
+                                          isNarrowPhone ? styles.boardTokenTextNarrow : null,
+                                          { color: boardSkin.tileNumber },
+                                        ]}
+                                      >
+                                        {player.playerOrder}
+                                      </AppText>
+                                    )}
+                                  </View>
+                                );
+                              })}
+                              {showOverflowTileCount && tilePlayers.length > maxVisibleTileTokens ? (
                                 <AppText
                                   variant="caption"
                                   allowFontScaling={false}
                                   maxFontSizeMultiplier={1}
-                                  numberOfLines={1}
-                                  style={[styles.boardTokenText, { color: boardSkin.tileNumber }]}
+                                  muted
                                 >
-                                  {player.playerOrder}
+                                  +{tilePlayers.length - maxVisibleTileTokens}
                                 </AppText>
-                              )}
+                              ) : null}
                             </View>
-                          );
-                        })}
-                        {tilePlayers.length > 3 ? (
-                          <AppText variant="caption" allowFontScaling={false} maxFontSizeMultiplier={1} muted>
-                            +{tilePlayers.length - 3}
-                          </AppText>
-                        ) : null}
-                      </View>
+                          </View>
+                        );
+                      })}
                     </View>
-                  );
-                })}
+                  ))}
+                </View>
               </View>
 
               <AppText variant="caption" muted>
@@ -626,6 +703,10 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     overflow: "hidden",
   },
+  skinPreviewImage: {
+    width: "100%",
+    height: "100%",
+  },
   skinPreviewTile: {
     width: "50%",
     height: "50%",
@@ -636,19 +717,35 @@ const styles = StyleSheet.create({
   boardGrid: {
     width: "100%",
     aspectRatio: 1,
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: "column",
     borderWidth: 1,
     borderRadius: 14,
     overflow: "hidden",
+    position: "relative",
+  },
+  boardArtLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  boardOverlayArtLayer: {
+    opacity: 0.78,
+  },
+  boardContentLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+  },
+  boardRow: {
+    flex: 1,
+    flexDirection: "row",
   },
   boardCell: {
-    width: "10%",
-    height: "10%",
+    flex: 1,
     borderWidth: 0.5,
     padding: 2,
     justifyContent: "space-between",
     overflow: "hidden",
+  },
+  boardCellNarrow: {
+    padding: 1,
   },
   cellHeader: {
     flexDirection: "row",
@@ -668,6 +765,10 @@ const styles = StyleSheet.create({
     lineHeight: 10,
     fontWeight: "600",
   },
+  boardTileNumberNarrow: {
+    fontSize: 9,
+    lineHeight: 9,
+  },
   boardJumpLabel: {
     fontSize: 9,
     lineHeight: 10,
@@ -675,10 +776,24 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     textAlign: "right",
   },
+  boardJumpLabelNarrow: {
+    fontSize: 8,
+    lineHeight: 9,
+  },
+  boardJumpDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 999,
+    marginRight: 1,
+  },
   boardTokenText: {
     fontSize: 9,
     lineHeight: 10,
     fontWeight: "700",
+  },
+  boardTokenTextNarrow: {
+    fontSize: 8,
+    lineHeight: 8,
   },
   tileToken: {
     width: 14,
@@ -688,6 +803,11 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
+  },
+  tileTokenNarrow: {
+    width: 12,
+    height: 12,
+    borderRadius: 2,
   },
   tileTokenImage: {
     width: "100%",
