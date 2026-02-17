@@ -21,6 +21,10 @@ This file is the context registry for v1. Start here before editing product, gam
 - `docs/context/game/word-master/ui-layout.md` - portrait-first board + rack layout
 - `docs/context/game/word-master/data-model.md` - tables and authoritative RPCs
 
+## Game: Cue Clash
+
+- `docs/context/game/cue-clash/rules.md` - 8-ball rules (v1) and authoritative shot flow
+
 ## Architecture
 
 - `docs/context/architecture/overview.md` - high-level system responsibilities

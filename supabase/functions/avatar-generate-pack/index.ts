@@ -23,15 +23,34 @@ type OpenAIImageResponse = {
 };
 
 const EXPRESSION_PROMPTS = {
-  neutral: "calm neutral expression, relaxed eyebrows, closed gentle smile or neutral lips",
+  neutral:
+    "friendly neutral expression: relaxed brows, calm eyes, slight warm smile (or neutral lips), approachable vibe",
   happy:
-    "very joyful expression: broad genuine smile, raised cheeks, bright smiling eyes, lively positive energy",
+    "very joyful expression: big genuine smile (teeth ok), lifted cheeks, bright sparkling eyes, lively celebratory energy",
   angry:
-    "strong angry expression: deeply furrowed brows, narrowed eyes, tense jaw, flared nostrils, intense but family-safe",
+    "strong cartoon-angry expression: compressed furrowed brows, narrowed intense eyes, tense jaw/mouth, clearly mad but family-safe (no horror)",
   crying:
-    "strong crying expression: watery eyes with visible tears, downturned mouth, sad brows, emotional but family-safe",
+    "strong crying expression: big watery eyes with visible tears, sad brows, trembling/downturned mouth, emotional but family-safe",
 } as const;
 const ALL_EXPRESSIONS = Object.keys(EXPRESSION_PROMPTS) as Array<keyof typeof EXPRESSION_PROMPTS>;
+
+function resolveStyleDescriptor(styleId: string): string {
+  const normalized = styleId.trim().toLowerCase();
+
+  if (normalized === "anime") {
+    return "Modern anime portrait: clean linework, soft cel shading, expressive eyes, crisp shapes, vibrant but tasteful colors.";
+  }
+
+  if (normalized === "pixar") {
+    return "High-quality 3D animated family-movie look (Pixar-inspired): soft global illumination feel, rounded forms, detailed skin/hair, warm cinematic lighting.";
+  }
+
+  if (normalized === "caricature") {
+    return "Playful caricature portrait: mildly exaggerated features for humor (slightly larger eyes/smile lines), but keep the person clearly recognizable.";
+  }
+
+  return `Custom style: ${styleId}. Apply this style consistently.`;
+}
 
 function parseQuality(rawValue: string | undefined): "low" | "medium" | "high" | null {
   const raw = (rawValue ?? "").trim().toLowerCase();
@@ -73,21 +92,25 @@ function decodeBase64(base64: string): Uint8Array {
 }
 
 function buildAvatarPrompt(expression: keyof typeof EXPRESSION_PROMPTS, styleId: string): string {
+  const styleDescriptor = resolveStyleDescriptor(styleId);
   const sharedInstructions = [
     "Output exactly one stylized cartoon avatar portrait with transparent background.",
     "Family-safe style. No text, no watermark, no border.",
     "Keep framing centered from upper torso to head.",
-    `Avatar style: ${styleId}.`,
+    `Style guide: ${styleDescriptor}`,
+    "Make it fun, charming, and expressive while staying recognizable to the real person.",
+    "Do not add hats, glasses, jewelry, or props unless they already exist in the reference image.",
   ];
 
   if (expression === "neutral") {
     return [
       "Task: Create the neutral base avatar from the original profile photo reference.",
-      "Preserve identity precisely: same apparent gender presentation, age group, skin tone, facial geometry, eye shape, hairline, and hairstyle.",
+      "Preserve identity precisely: same apparent gender presentation, age group, skin tone, facial geometry, eye shape, hairline, hairstyle, and key facial details.",
       "Keep clothing direction and neckline consistent when visible.",
       "Maintain adult facial maturity; do not infantilize the face.",
       ...sharedInstructions,
       `Expression target: ${EXPRESSION_PROMPTS.neutral}.`,
+      "Important: prioritize identity match first, then style quality.",
       "If style and identity conflict, prioritize identity preservation first.",
     ].join(" ");
   }
@@ -112,7 +135,7 @@ function buildAvatarPrompt(expression: keyof typeof EXPRESSION_PROMPTS, styleId:
     ...sharedInstructions,
     `Expression target: ${EXPRESSION_PROMPTS[expression]}.`,
     expressionSpecificInstructions[expression],
-    "Important: preserve character consistency first, then maximize emotional clarity.",
+    "Important: preserve character consistency first, then maximize emotional clarity and comedic charm.",
   ].join(" ");
 }
 
@@ -291,38 +314,68 @@ serve(async (req) => {
     return badRequestResponse("Target user is not an active member of the target family");
   }
 
-  const { data: processingPack, error: processingPackError } = await supabase
-    .from("avatar_packs")
-    .select("id,base_path,version")
-    .eq("family_id", body.familyId)
-    .eq("user_id", body.userId)
-    .eq("style_id", body.styleId)
-    .in("status", ["queued", "processing"])
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (processingPackError) {
-    return jsonResponse(400, {
-      error: processingPackError.message,
-      code: processingPackError.code,
-      hint: processingPackError.hint,
-    });
-  }
+  const includesNeutral = requestedExpressions.includes("neutral");
 
   let avatarPackId: string;
   let basePath: string;
   let version: number;
 
-  if (processingPack) {
-    avatarPackId = processingPack.id as string;
-    basePath = processingPack.base_path as string;
-    version = processingPack.version as number;
+  if (!includesNeutral) {
+    const { data: latestPack, error: latestPackError } = await supabase
+      .from("avatar_packs")
+      .select("id,base_path,version,status")
+      .eq("family_id", body.familyId)
+      .eq("user_id", body.userId)
+      .eq("style_id", body.styleId)
+      .in("status", ["ready", "processing", "queued"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestPackError) {
+      return jsonResponse(400, {
+        error: latestPackError.message,
+        code: latestPackError.code,
+        hint: latestPackError.hint,
+      });
+    }
+
+    if (!latestPack) {
+      return badRequestResponse("Generate a neutral avatar for this style before generating expressions.");
+    }
+
+    avatarPackId = latestPack.id as string;
+    basePath = latestPack.base_path as string;
+    version = latestPack.version as number;
   } else {
-    const { data: reservedPack, error: reserveError } = await supabase.rpc("reserve_avatar_pack_v1", {
-      p_family_id: body.familyId,
-      p_user_id: body.userId,
-      p_style_id: body.styleId,
+    const { data: processingPack, error: processingPackError } = await supabase
+      .from("avatar_packs")
+      .select("id,base_path,version")
+      .eq("family_id", body.familyId)
+      .eq("user_id", body.userId)
+      .eq("style_id", body.styleId)
+      .in("status", ["queued", "processing"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (processingPackError) {
+      return jsonResponse(400, {
+        error: processingPackError.message,
+        code: processingPackError.code,
+        hint: processingPackError.hint,
+      });
+    }
+
+    if (processingPack) {
+      avatarPackId = processingPack.id as string;
+      basePath = processingPack.base_path as string;
+      version = processingPack.version as number;
+    } else {
+      const { data: reservedPack, error: reserveError } = await supabase.rpc("reserve_avatar_pack_v1", {
+        p_family_id: body.familyId,
+        p_user_id: body.userId,
+        p_style_id: body.styleId,
       p_created_by: actorUserId,
     });
 
@@ -337,6 +390,7 @@ serve(async (req) => {
     avatarPackId = reservedPack.avatar_pack_id as string;
     basePath = reservedPack.base_path as string;
     version = reservedPack.version as number;
+    }
   }
 
   const originalSourcePath = await resolveOriginalSourcePath(
@@ -412,11 +466,12 @@ serve(async (req) => {
     }
 
     const generatedFileNames = new Set((storedFiles ?? []).map((file) => file.name));
+    const neutralReady = generatedFileNames.has("neutral.png");
     const allReady = ALL_EXPRESSIONS.every((expression) => generatedFileNames.has(`${expression}.png`));
 
     const { error: updatePackError } = await supabase
       .from("avatar_packs")
-      .update({ status: allReady ? "ready" : "processing" })
+      .update({ status: neutralReady ? "ready" : "processing" })
       .eq("id", avatarPackId);
 
     if (updatePackError) {

@@ -15,6 +15,9 @@
 - `word_master_players`: Word Master players + scores + racks (v1)
 - `word_master_board_tiles`: Word Master board tiles (authoritative placements)
 - `word_master_events`: Word Master immutable event log
+- `cue_clash_games`: Cue Clash game session state (turn pointer, balls + pockets)
+- `cue_clash_players`: Cue Clash players (order, suit assignment, fouls)
+- `cue_clash_events`: Cue Clash immutable event log (includes replay payload)
 - `user_profiles`: display data and selected avatar settings
 - `avatar_packs`: generated pack metadata and active version
 
@@ -32,6 +35,9 @@
 - `word_master_games 1 -> many word_master_players`
 - `word_master_games 1 -> many word_master_board_tiles`
 - `word_master_games 1 -> many word_master_events`
+- `rooms 1 -> many cue_clash_games`
+- `cue_clash_games 1 -> many cue_clash_players`
+- `cue_clash_games 1 -> many cue_clash_events`
 - `user_profiles 1 -> many avatar_packs`
 
 ## Notes
@@ -46,6 +52,10 @@
   - `game_started`
   - `turn_played`
   - `turn_passed`
+  - `game_ended`
+- Cue Clash event types:
+  - `game_started`
+  - `shot_taken`
   - `game_ended`
 - Public RPC wrapper functions are exposed for PostgREST/Edge invocation and delegate to `app.*` functions with hardened execution context.
 - `user_profiles.cinematics_enabled` controls cinematic camera behavior in game rendering.

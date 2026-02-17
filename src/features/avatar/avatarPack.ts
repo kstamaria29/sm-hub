@@ -4,14 +4,9 @@ import { Database } from "../../lib/database.types";
 
 export const AVATAR_EXPRESSIONS = ["neutral", "happy", "angry", "crying"] as const;
 export const AVATAR_STYLE_OPTIONS = [
-  { id: "storybook", label: "Storybook" },
-  { id: "comic", label: "Comic" },
-  { id: "anime-soft", label: "Anime Soft" },
-  { id: "watercolor", label: "Watercolor" },
-  { id: "3d-toy", label: "3D Toy" },
-  { id: "pixel", label: "Pixel" },
-  { id: "paper-cut", label: "Paper Cut" },
-  { id: "flat-minimal", label: "Flat Minimal" },
+  { id: "anime", label: "Anime" },
+  { id: "pixar", label: "Pixar" },
+  { id: "caricature", label: "Caricature" },
 ] as const;
 
 export const AVATAR_PACKS_BUCKET = "avatar-packs";

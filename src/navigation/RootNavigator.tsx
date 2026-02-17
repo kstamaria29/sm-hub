@@ -9,22 +9,16 @@ import { GamesScreen } from "../screens/GamesScreen";
 import { OnboardingScreen } from "../screens/OnboardingScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
 import { useTheme } from "../ui/theme/ThemeProvider";
+import { AppTabBar } from "./AppTabBar";
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
 function AppTabs() {
-  const { colors } = useTheme();
-
   return (
     <Tab.Navigator
+      tabBar={(props) => <AppTabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: {
-          borderTopColor: colors.border,
-          backgroundColor: colors.surface,
-        },
       }}
     >
       <Tab.Screen name="Chat" component={ChatScreen} />

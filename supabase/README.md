@@ -21,8 +21,14 @@ Run SQL manually in the Supabase Dashboard SQL Editor in this exact order:
 13. `supabase/migrations/202602160003_word_master_play_turn_rpc.sql`
 14. `supabase/migrations/202602160004_word_master_pass_and_end_rpc.sql`
 15. `supabase/migrations/202602160005_chat_message_reactions.sql`
-16. `supabase/storage/001_avatar_buckets.sql`
-17. `supabase/tests/rls_hardening.sql` (verification script; includes `rollback`)
+16. `supabase/migrations/202602160006_cue_clash_rooms_and_tables.sql`
+17. `supabase/migrations/202602160007_cue_clash_start_rpc.sql`
+18. `supabase/migrations/202602160008_cue_clash_shot_rpc.sql`
+19. `supabase/migrations/202602160009_cue_clash_end_rpc.sql`
+20. `supabase/migrations/202602170001_word_master_dictionary_and_bonuses.sql`
+21. `supabase/migrations/202602170002_word_master_play_turn_scoring.sql`
+22. `supabase/storage/001_avatar_buckets.sql`
+23. `supabase/tests/rls_hardening.sql` (verification script; includes `rollback`)
 
 After SQL is applied, configure edge function secrets in Supabase:
 
@@ -42,6 +48,9 @@ Deploy functions from CLI (linked to your hosted project) or Dashboard:
 - `word-master-play`
 - `word-master-pass`
 - `word-master-end`
+- `cue-clash-start`
+- `cue-clash-shot`
+- `cue-clash-end`
 - `avatar-generate-pack`
 
 ## Structure
@@ -57,6 +66,7 @@ Deploy functions from CLI (linked to your hosted project) or Dashboard:
 - [ ] All v1 tables exist (`families`, `family_members`, `invites`, `rooms`, `messages`, `games`, `game_players`, `game_events`, `user_profiles`, `avatar_packs`)
 - [ ] Word Master tables exist (`word_master_games`, `word_master_players`, `word_master_board_tiles`, `word_master_events`)
 - [ ] Chat reactions table exists (`message_reactions`)
+- [ ] Cue Clash tables exist (`cue_clash_games`, `cue_clash_players`, `cue_clash_events`)
 - [ ] RLS is enabled for family-scoped tables
 - [ ] Storage buckets exist: `avatar-packs`, `avatar-originals`
 - [ ] `avatar-packs` write path is service-role/edge-function only
@@ -66,6 +76,9 @@ Deploy functions from CLI (linked to your hosted project) or Dashboard:
 - [ ] `game-roll-move` executes transactional authoritative roll/move RPC
 - [ ] `word-master-start` starts exactly one active Word Master session per room
 - [ ] `word-master-play` executes transactional authoritative turn placement RPC
+- [ ] Word Master dictionary validation works (ispell dictionary available) or shows a clear “Dictionary not configured” error
+- [ ] `cue-clash-start` starts exactly one active Cue Clash session per room (2 players max; 1-player admin test allowed)
+- [ ] `cue-clash-shot` executes authoritative shot simulation + state update
 - [ ] `avatar-generate-pack` generates and uploads 4 transparent PNG expressions
 - [ ] `supabase/tests/rls_hardening.sql` executes without assertion failures
 

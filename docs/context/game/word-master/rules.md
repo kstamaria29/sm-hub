@@ -30,14 +30,20 @@ Admin can also:
 
 ## Scoring (v1)
 
-v1 scoring is “Scrabble-ish” but intentionally simplified for reliability:
+Scoring is Scrabble-like:
 
-- Score is the sum of letter points for the **main word(s)** formed:
-  - Multi-tile moves score the main word along the placement direction.
+- Score all words formed by the move:
+  - **Main word** along the placement direction.
+  - **Cross words** created by each newly placed tile (perpendicular).
   - Single-tile moves may score **both** horizontal and vertical words if they form length > 1.
-- **No board multipliers** (double letter/word) in v1.
+- Board bonuses (11x11):
+  - `DL` (double letter), `TL` (triple letter), `DW` (double word), `TW` (triple word).
+  - The **center star** is a `DW` square.
+  - Bonuses apply only to **tiles placed this turn** (existing tiles do not re-multiply).
 - **Bingo bonus**: +50 points when using all 7 tiles in a single move.
-- Dictionary validation is **not enforced** in v1 (casual mode).
+- **Dictionary validation is enforced**: all scored words must be valid English.
+  - Validation uses an **offline ispell dictionary** when available in Supabase Postgres.
+  - If ispell dictionary files are missing, play turns will return a “Dictionary not configured” error until configured.
 
 ## Events
 
@@ -49,4 +55,3 @@ The server writes an immutable event log:
 - `game_ended`
 
 Clients should render state and animations based on server-confirmed outcomes only.
-

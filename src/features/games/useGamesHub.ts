@@ -13,9 +13,13 @@ type WordMasterGameRow = Pick<
   Database["public"]["Tables"]["word_master_games"]["Row"],
   "id" | "status" | "current_turn_user_id" | "created_at"
 >;
+type CueClashGameRow = Pick<
+  Database["public"]["Tables"]["cue_clash_games"]["Row"],
+  "id" | "status" | "current_turn_user_id" | "created_at"
+>;
 
 type GameSummary = {
-  slug: "snakes-ladders" | "word-master";
+  slug: "snakes-ladders" | "word-master" | "cue-clash";
   title: string;
   roomId: string | null;
   gameId: string | null;
@@ -33,6 +37,7 @@ export type GamesHubState = {
   familyId: string | null;
   snakes: GameSummary;
   wordMaster: GameSummary;
+  cueClash: GameSummary;
   refresh: () => Promise<void>;
 };
 
@@ -69,6 +74,7 @@ export function useGamesHub(): GamesHubState {
   const [familyId, setFamilyId] = useState<string | null>(null);
   const [snakes, setSnakes] = useState<GameSummary>(() => emptySummary("snakes-ladders", "Snakes and Ladders"));
   const [wordMaster, setWordMaster] = useState<GameSummary>(() => emptySummary("word-master", "Word Master"));
+  const [cueClash, setCueClash] = useState<GameSummary>(() => emptySummary("cue-clash", "Cue Clash"));
 
   const load = useCallback(async () => {
     if (!isSupabaseConfigured || !supabase) {
@@ -78,6 +84,7 @@ export function useGamesHub(): GamesHubState {
       setFamilyId(null);
       setSnakes(emptySummary("snakes-ladders", "Snakes and Ladders"));
       setWordMaster(emptySummary("word-master", "Word Master"));
+      setCueClash(emptySummary("cue-clash", "Cue Clash"));
       return;
     }
 
@@ -118,6 +125,7 @@ export function useGamesHub(): GamesHubState {
       setFamilyId(null);
       setSnakes(emptySummary("snakes-ladders", "Snakes and Ladders"));
       setWordMaster(emptySummary("word-master", "Word Master"));
+      setCueClash(emptySummary("cue-clash", "Cue Clash"));
       return;
     }
 
@@ -128,7 +136,7 @@ export function useGamesHub(): GamesHubState {
       .select("id,slug,title")
       .eq("family_id", profile.family_id)
       .eq("kind", "game")
-      .in("slug", ["snakes-ladders", "word-master"]);
+      .in("slug", ["snakes-ladders", "word-master", "cue-clash"]);
 
     if (roomsError) {
       setLoading(false);
@@ -139,6 +147,7 @@ export function useGamesHub(): GamesHubState {
     const roomRows = (rooms ?? []) as RoomRow[];
     const snakesRoom = roomRows.find((room) => room.slug === "snakes-ladders") ?? null;
     const wordRoom = roomRows.find((room) => room.slug === "word-master") ?? null;
+    const cueRoom = roomRows.find((room) => room.slug === "cue-clash") ?? null;
 
     const { data: names, error: namesError } = await supabase
       .from("user_profiles")
@@ -200,6 +209,28 @@ export function useGamesHub(): GamesHubState {
     const snakesTurnName = resolveDisplayName(namesByUserId, snakesGame?.current_turn_user_id ?? null);
     const wordTurnName = resolveDisplayName(namesByUserId, wordGame?.current_turn_user_id ?? null);
 
+    let cueGame: CueClashGameRow | null = null;
+    if (cueRoom?.id) {
+      const { data, error: gameError } = await supabase
+        .from("cue_clash_games")
+        .select("id,status,current_turn_user_id,created_at")
+        .eq("room_id", cueRoom.id)
+        .in("status", ["pending", "active"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (gameError) {
+        setLoading(false);
+        setError(gameError.message);
+        return;
+      }
+
+      cueGame = (data as CueClashGameRow | null) ?? null;
+    }
+
+    const cueTurnName = resolveDisplayName(namesByUserId, cueGame?.current_turn_user_id ?? null);
+
     setSnakes({
       slug: "snakes-ladders",
       title: snakesRoom?.title ?? "Snakes and Ladders",
@@ -220,6 +251,17 @@ export function useGamesHub(): GamesHubState {
       currentTurnUserId: wordGame?.current_turn_user_id ?? null,
       currentTurnName: wordTurnName,
       isMyTurn: Boolean(wordGame?.current_turn_user_id && wordGame.current_turn_user_id === sessionUser.id),
+    });
+
+    setCueClash({
+      slug: "cue-clash",
+      title: cueRoom?.title ?? "Cue Clash",
+      roomId: cueRoom?.id ?? null,
+      gameId: cueGame?.id ?? null,
+      status: cueGame ? (cueGame.status as "pending" | "active") : "none",
+      currentTurnUserId: cueGame?.current_turn_user_id ?? null,
+      currentTurnName: cueTurnName,
+      isMyTurn: Boolean(cueGame?.current_turn_user_id && cueGame.current_turn_user_id === sessionUser.id),
     });
 
     setLoading(false);
@@ -246,6 +288,11 @@ export function useGamesHub(): GamesHubState {
         { event: "*", schema: "public", table: "word_master_games", filter: `family_id=eq.${familyId}` },
         () => void load(),
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "cue_clash_games", filter: `family_id=eq.${familyId}` },
+        () => void load(),
+      )
       .subscribe();
 
     return () => {
@@ -261,7 +308,7 @@ export function useGamesHub(): GamesHubState {
     familyId,
     snakes,
     wordMaster,
+    cueClash,
     refresh: load,
   };
 }
-

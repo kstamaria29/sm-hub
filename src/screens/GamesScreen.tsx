@@ -34,6 +34,7 @@ import { Screen } from "../ui/primitives/Screen";
 import { Tag } from "../ui/primitives/Tag";
 import { useTheme } from "../ui/theme/ThemeProvider";
 import { WordMasterScreen } from "./WordMasterScreen";
+import { CueClashScreen } from "./CueClashScreen";
 
 const BOARD_CELLS = buildClassicBoardCells();
 const BOARD_ROWS = Array.from({ length: 10 }, (_, rowIndex) =>
@@ -43,7 +44,7 @@ const TILE_COORDINATES_BY_TILE = new Map(BOARD_CELLS.map((cell) => [cell.tile, {
 
 type LottieMoment = "dice" | "ladder" | "snake" | "big_snake";
 
-const LOTTIE_SOURCE_BY_MOMENT: Record<LottieMoment, number> = {
+const LOTTIE_SOURCE_BY_MOMENT: Record<LottieMoment, any> = {
   dice: require("../../assets/lottie/dice_roll.json"),
   ladder: require("../../assets/lottie/ladder.json"),
   snake: require("../../assets/lottie/snake.json"),
@@ -255,14 +256,16 @@ function resolveEventBanner(
   };
 }
 
-type GamesView = "hub" | "snakes" | "word-master";
+type GamesView = "hub" | "snakes" | "word-master" | "cue-clash";
 
 function GamesHubScreen({
   onOpenSnakes,
   onOpenWordMaster,
+  onOpenCueClash,
 }: {
   onOpenSnakes: () => void;
   onOpenWordMaster: () => void;
+  onOpenCueClash: () => void;
 }) {
   const { colors, radius, spacing } = useTheme();
   const hub = useGamesHub();
@@ -272,6 +275,9 @@ function GamesHubScreen({
 
   const wordTag = hub.wordMaster.status === "active" ? (hub.wordMaster.isMyTurn ? "Your turn" : "Active") : "No game";
   const wordTone = hub.wordMaster.status === "active" ? (hub.wordMaster.isMyTurn ? "accent" : "success") : "neutral";
+
+  const cueTag = hub.cueClash.status === "active" ? (hub.cueClash.isMyTurn ? "Your turn" : "Active") : "No game";
+  const cueTone = hub.cueClash.status === "active" ? (hub.cueClash.isMyTurn ? "accent" : "success") : "neutral";
 
   return (
     <Screen padded={false}>
@@ -336,9 +342,29 @@ function GamesHubScreen({
           </PrimaryButton>
         </InfoCard>
 
+        <InfoCard>
+          <View style={[styles.hubCardHeader, { gap: spacing.sm }]}>
+            <View style={styles.hubCardTitle}>
+              <AppText variant="title">Cue Clash</AppText>
+              <AppText muted>8-ball pool with server-authoritative physics. 2 players max.</AppText>
+            </View>
+            <Tag tone={cueTone} label={cueTag} />
+          </View>
+
+          {hub.cueClash.status === "active" ? (
+            <AppText muted>Turn: {hub.cueClash.currentTurnName ?? "â€”"}</AppText>
+          ) : (
+            <AppText muted>No active game yet.</AppText>
+          )}
+
+          <PrimaryButton tone="primary" onPress={onOpenCueClash} disabled={!hub.configured || hub.loading}>
+            {hub.cueClash.status === "active" ? "Continue" : "Open"}
+          </PrimaryButton>
+        </InfoCard>
+
         <View style={[styles.hubFooter, { borderColor: colors.border, borderRadius: radius.md }]}>
           <AppText variant="caption" muted>
-            Tip: Word Master supports 1-player admin testing while we polish multiplayer.
+            Tip: Some games support 1-player admin testing while we polish multiplayer.
           </AppText>
         </View>
       </ScrollView>
@@ -754,7 +780,12 @@ function SnakesAndLaddersScreen({ onBack }: { onBack: () => void }) {
           );
         }
 
-        const moment: LottieMoment = animation.transition === "ladder" ? "ladder" : animation.transition;
+        const moment: LottieMoment =
+          animation.transition === "none"
+            ? "dice"
+            : animation.transition === "ladder"
+              ? "ladder"
+              : animation.transition;
         await playMoment(moment, undefined, 1200);
         if (cancelledRef.current || !isFocusedRef.current) {
           return;
@@ -1093,17 +1124,13 @@ function SnakesAndLaddersScreen({ onBack }: { onBack: () => void }) {
               >
                 <Animated.View style={[styles.boardCameraLayer, cameraAnimatedStyle]}>
                   {boardSkin.boardBaseImage ? (
-                    <Image
-                      pointerEvents="none"
-                      source={boardSkin.boardBaseImage}
-                      style={styles.boardArtLayer}
-                      resizeMode="stretch"
-                    />
+                    <View pointerEvents="none" style={styles.boardArtLayer}>
+                      <Image source={boardSkin.boardBaseImage} style={styles.boardArtLayerImage} resizeMode="stretch" />
+                    </View>
                   ) : null}
                   {boardSkin.overlaySnakesLaddersImage ? (
-                    <Image
+                    <View
                       pointerEvents="none"
-                      source={boardSkin.overlaySnakesLaddersImage}
                       style={[
                         styles.boardArtLayer,
                         {
@@ -1114,8 +1141,13 @@ function SnakesAndLaddersScreen({ onBack }: { onBack: () => void }) {
                           left: boardOverlayInset,
                         },
                       ]}
-                      resizeMode="stretch"
-                    />
+                    >
+                      <Image
+                        source={boardSkin.overlaySnakesLaddersImage}
+                        style={styles.boardArtLayerImage}
+                        resizeMode="stretch"
+                      />
+                    </View>
                   ) : null}
 
                   <View style={styles.boardContentLayer}>
@@ -1467,10 +1499,15 @@ export function GamesScreen() {
     return <WordMasterScreen onBack={() => setView("hub")} />;
   }
 
+  if (view === "cue-clash") {
+    return <CueClashScreen onBack={() => setView("hub")} />;
+  }
+
   return (
     <GamesHubScreen
       onOpenSnakes={() => setView("snakes")}
       onOpenWordMaster={() => setView("word-master")}
+      onOpenCueClash={() => setView("cue-clash")}
     />
   );
 }
@@ -1566,6 +1603,10 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
+    width: "100%",
+    height: "100%",
+  },
+  boardArtLayerImage: {
     width: "100%",
     height: "100%",
   },

@@ -23,6 +23,9 @@ begin
         'word_master_players',
         'word_master_board_tiles',
         'word_master_events',
+        'cue_clash_games',
+        'cue_clash_players',
+        'cue_clash_events',
         'user_profiles',
         'avatar_packs'
       ]
@@ -62,6 +65,9 @@ begin
         'word_master_players',
         'word_master_board_tiles',
         'word_master_events',
+        'cue_clash_games',
+        'cue_clash_players',
+        'cue_clash_events',
         'user_profiles',
         'avatar_packs'
       ]
@@ -153,6 +159,41 @@ begin
       and coalesce(with_check, '') like '%auth.role() = ''service_role''%'
   ) then
     raise exception 'Expected service-role write policy on public.avatar_packs';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'cue_clash_games'
+      and policyname = 'cue_clash_games_write_service_role'
+      and coalesce(qual, '') like '%auth.role() = ''service_role''%'
+      and coalesce(with_check, '') like '%auth.role() = ''service_role''%'
+  ) then
+    raise exception 'Expected service-role write policy on public.cue_clash_games';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'cue_clash_players'
+      and policyname = 'cue_clash_players_write_service_role'
+      and coalesce(qual, '') like '%auth.role() = ''service_role''%'
+      and coalesce(with_check, '') like '%auth.role() = ''service_role''%'
+  ) then
+    raise exception 'Expected service-role write policy on public.cue_clash_players';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'cue_clash_events'
+      and policyname = 'cue_clash_events_insert_service_role'
+      and coalesce(with_check, '') like '%auth.role() = ''service_role''%'
+  ) then
+    raise exception 'Expected service-role insert policy on public.cue_clash_events';
   end if;
 end
 $$;
@@ -303,6 +344,18 @@ begin
     raise exception 'public role must not execute public.word_master_end_game_v1';
   end if;
 
+  if has_function_privilege('public', 'public.cue_clash_start_v1(uuid,uuid,uuid[])', 'EXECUTE') then
+    raise exception 'public role must not execute public.cue_clash_start_v1';
+  end if;
+
+  if has_function_privilege('public', 'public.cue_clash_take_shot_v1(uuid,uuid,uuid,int,jsonb,uuid,boolean,jsonb,boolean,uuid,public.game_status,jsonb)', 'EXECUTE') then
+    raise exception 'public role must not execute public.cue_clash_take_shot_v1';
+  end if;
+
+  if has_function_privilege('public', 'public.cue_clash_end_game_v1(uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'public role must not execute public.cue_clash_end_game_v1';
+  end if;
+
   if not has_function_privilege('service_role', 'public.bootstrap_family_v1(uuid,text,text)', 'EXECUTE') then
     raise exception 'service_role must execute public.bootstrap_family_v1';
   end if;
@@ -341,6 +394,18 @@ begin
 
   if not has_function_privilege('service_role', 'public.word_master_end_game_v1(uuid,uuid,text)', 'EXECUTE') then
     raise exception 'service_role must execute public.word_master_end_game_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'public.cue_clash_start_v1(uuid,uuid,uuid[])', 'EXECUTE') then
+    raise exception 'service_role must execute public.cue_clash_start_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'public.cue_clash_take_shot_v1(uuid,uuid,uuid,int,jsonb,uuid,boolean,jsonb,boolean,uuid,public.game_status,jsonb)', 'EXECUTE') then
+    raise exception 'service_role must execute public.cue_clash_take_shot_v1';
+  end if;
+
+  if not has_function_privilege('service_role', 'public.cue_clash_end_game_v1(uuid,uuid,text)', 'EXECUTE') then
+    raise exception 'service_role must execute public.cue_clash_end_game_v1';
   end if;
 
   if not has_function_privilege('authenticated', 'app.is_family_member(uuid)', 'EXECUTE') then
@@ -395,6 +460,15 @@ begin
     select 1
     from pg_indexes
     where schemaname = 'public'
+      and indexname = 'idx_cue_clash_games_one_open_game_per_room'
+  ) then
+    raise exception 'Missing Cue Clash one-open-game-per-room index';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_indexes
+    where schemaname = 'public'
       and indexname = 'idx_game_events_roll_request_unique'
   ) then
     raise exception 'Missing game roll request idempotency index';
@@ -407,6 +481,15 @@ begin
       and indexname = 'idx_word_master_events_request_unique'
   ) then
     raise exception 'Missing Word Master request idempotency index';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_indexes
+    where schemaname = 'public'
+      and indexname = 'idx_cue_clash_events_request_unique'
+  ) then
+    raise exception 'Missing Cue Clash request idempotency index';
   end if;
 end
 $$;

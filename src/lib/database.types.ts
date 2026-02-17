@@ -39,6 +39,123 @@ export type Database = {
         };
         Relationships: [];
       };
+      cue_clash_events: {
+        Row: {
+          created_at: string;
+          created_by: string | null;
+          event_type: string;
+          family_id: string;
+          game_id: string;
+          id: number;
+          payload: Json;
+        };
+        Insert: {
+          created_at?: string;
+          created_by?: string | null;
+          event_type: string;
+          family_id: string;
+          game_id: string;
+          id?: number;
+          payload?: Json;
+        };
+        Update: {
+          created_at?: string;
+          created_by?: string | null;
+          event_type?: string;
+          family_id?: string;
+          game_id?: string;
+          id?: number;
+          payload?: Json;
+        };
+        Relationships: [];
+      };
+      cue_clash_games: {
+        Row: {
+          balls: Json;
+          created_at: string;
+          created_by: string;
+          current_turn_user_id: string | null;
+          family_id: string;
+          finished_at: string | null;
+          id: string;
+          last_shot_at: string | null;
+          open_table: boolean;
+          room_id: string;
+          started_at: string | null;
+          status: "pending" | "active" | "finished" | "cancelled";
+          turn_number: number;
+          updated_at: string;
+          winner_user_id: string | null;
+        };
+        Insert: {
+          balls?: Json;
+          created_at?: string;
+          created_by: string;
+          current_turn_user_id?: string | null;
+          family_id: string;
+          finished_at?: string | null;
+          id?: string;
+          last_shot_at?: string | null;
+          open_table?: boolean;
+          room_id: string;
+          started_at?: string | null;
+          status?: "pending" | "active" | "finished" | "cancelled";
+          turn_number?: number;
+          updated_at?: string;
+          winner_user_id?: string | null;
+        };
+        Update: {
+          balls?: Json;
+          created_at?: string;
+          created_by?: string;
+          current_turn_user_id?: string | null;
+          family_id?: string;
+          finished_at?: string | null;
+          id?: string;
+          last_shot_at?: string | null;
+          open_table?: boolean;
+          room_id?: string;
+          started_at?: string | null;
+          status?: "pending" | "active" | "finished" | "cancelled";
+          turn_number?: number;
+          updated_at?: string;
+          winner_user_id?: string | null;
+        };
+        Relationships: [];
+      };
+      cue_clash_players: {
+        Row: {
+          created_at: string;
+          family_id: string;
+          fouls: number;
+          game_id: string;
+          id: string;
+          player_order: number;
+          suit: "solids" | "stripes" | null;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          family_id: string;
+          fouls?: number;
+          game_id: string;
+          id?: string;
+          player_order: number;
+          suit?: "solids" | "stripes" | null;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          family_id?: string;
+          fouls?: number;
+          game_id?: string;
+          id?: string;
+          player_order?: number;
+          suit?: "solids" | "stripes" | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       families: {
         Row: {
           created_at: string;

@@ -490,7 +490,13 @@ export function useFamilyGame(roomSlug = "snakes-ladders"): FamilyGameState {
         const expression = expressionByUserId.get(player.user_id) ?? "neutral";
         const imagePath = `${basePath}/${expression}.png`;
         const signedUrl = await createSignedAvatarUrl(supabase, imagePath, 60 * 30);
-        avatarUrlByUserId.set(player.user_id, signedUrl);
+        if (signedUrl || expression === "neutral") {
+          avatarUrlByUserId.set(player.user_id, signedUrl);
+          return;
+        }
+
+        const fallbackUrl = await createSignedAvatarUrl(supabase, `${basePath}/neutral.png`, 60 * 30);
+        avatarUrlByUserId.set(player.user_id, fallbackUrl);
       }),
     );
 

@@ -25,6 +25,9 @@
 - `word-master-play`: validates turn order and applies authoritative tile placement transaction
 - `word-master-pass`: validates turn order and advances to the next player
 - `word-master-end`: validates admin caller and closes an open Word Master session
+- `cue-clash-start`: validates admin caller and starts an authoritative Cue Clash session
+- `cue-clash-shot`: validates turn order and applies authoritative shot simulation + state update
+- `cue-clash-end`: validates admin caller and closes an open Cue Clash session
 - `avatar-generate-pack`: orchestrates server-side avatar pack generation and storage (neutral-first supported)
 
 ## Security Model

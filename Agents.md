@@ -9,6 +9,7 @@ We are building a private, admin-managed family app (8-10 members, ages 30-65) f
 - Family chat (real-time)
 - Snakes & Ladders (turn-based, authoritative state)
 - Word Master (Scrabble-like, turn-based, authoritative state)
+- Cue Clash (8-ball pool, turn-based shots with authoritative physics)
 - Cartoon avatar packs (transparent PNG) used as game tokens
 
 Current implementation snapshot:
@@ -19,7 +20,8 @@ Current implementation snapshot:
 - Chat room is functional with realtime message timeline + reactions.
 - Games screen supports a game hub with selections:
   - Snakes & Ladders (authoritative start/roll/end; board grid rendering, event banners, expression-aware tokens)
-  - Word Master (authoritative start/play/pass/end; board + rack + scoring)
+  - Word Master (authoritative start/play/pass/end; board + rack + Scrabble-like scoring + dictionary validation)
+  - Cue Clash (authoritative start/shot/end; physics replay + ball animations)
 - Settings/Profile supports:
   - display name updates
   - cinematics toggle
@@ -27,7 +29,7 @@ Current implementation snapshot:
   - navigation into Avatars flow
 - Avatars flow is two-step:
   - step 1 generate/regenerate neutral preview from original photo
-  - step 2 confirm neutral and generate remaining expressions (`happy`, `angry`, `crying`) sequentially
+  - step 2 confirm neutral (activate style) and generate expressions (`happy`, `angry`, `crying`) individually
 - Avatar preview grid is implemented and shows per-expression status.
 - Temporary testing mode is enabled: one-player game start is currently allowed.
 
@@ -47,6 +49,7 @@ Out of scope for v1:
 ## UI design rules
 
 - Prefer shared UI primitives and theme tokens over one-off styling in screens.
+- Prefer reusable components and shared game logic/hooks for new features; only create new primitives when the behavior is truly unique.
 
 ## Documentation + MCP usage rules (MANDATORY)
 
@@ -75,7 +78,8 @@ Out of scope for v1:
 
 - OpenAI Image Generation (server-side only) to generate transparent PNG cartoon avatar packs:
   - neutral, happy, angry, crying
-  - 8 selectable styles per user
+  - preset styles: Anime, Pixar, Caricature
+  - custom style prompt supported
 - All OpenAI calls must be made from Edge Functions (never from the mobile client).
 
 ### Game assets
@@ -176,7 +180,7 @@ Access rules (avatars)
 ## Avatar pack requirements
 
 Avatar setup flow:
-Upload/take photo -> Choose preset style or enter custom style -> Generate neutral preview -> Confirm neutral -> Generate happy/angry/crying -> Preview pack
+Upload/take photo -> Choose preset style or enter custom style -> Generate neutral preview -> Confirm neutral -> Generate happy/angry/crying individually -> Preview pack
 
 Generation outputs:
 

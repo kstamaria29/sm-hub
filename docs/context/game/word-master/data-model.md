@@ -23,6 +23,13 @@ New families get this room during `bootstrap_family_v1`.
 - `word_master_events`
   - immutable event log for UI + replay
 
+## Event payloads (selected)
+
+- `turn_played.payload` includes:
+  - `words`: array of word breakdowns (`direction`, `word`, `base_points`, `word_multiplier`, `bonuses`, `points`)
+  - `points`: total points gained this turn (includes bingo)
+  - `bingo_bonus`: `0` or `50`
+
 ## Authoritative APIs
 
 Edge Functions:
@@ -40,4 +47,3 @@ RPCs live under `app.*` and are exposed via `public.*` wrappers for PostgREST re
 - Write: service-role only for Word Master state tables (Edge Functions/RPCs).
 
 Chat reactions are separate (`message_reactions`) and are written directly by authenticated members under RLS constraints.
-

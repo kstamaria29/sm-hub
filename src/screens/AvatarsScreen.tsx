@@ -88,14 +88,16 @@ export function AvatarsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [familyId, setFamilyId] = useState<string | null>(null);
+  const [activeStyleId, setActiveStyleId] = useState<string | null>(null);
   const [selectedStyleId, setSelectedStyleId] = useState<string>(AVATAR_STYLE_OPTIONS[0].id);
   const [customStyleInput, setCustomStyleInput] = useState("");
+  const [neutralConfirmed, setNeutralConfirmed] = useState(false);
   const [originalPhotoPath, setOriginalPhotoPath] = useState<string | null>(null);
   const [originalPhotoUrl, setOriginalPhotoUrl] = useState<string | null>(null);
   const [latestAvatarPack, setLatestAvatarPack] = useState<AvatarPackSummary | null>(null);
   const [avatarPreviews, setAvatarPreviews] = useState<AvatarPreviewItem[]>([]);
   const [isGeneratingNeutral, setIsGeneratingNeutral] = useState(false);
-  const [isGeneratingExpressions, setIsGeneratingExpressions] = useState(false);
+  const [isConfirmingNeutral, setIsConfirmingNeutral] = useState(false);
   const [regeneratingExpression, setRegeneratingExpression] = useState<AvatarExpression | null>(null);
   const [progressMessage, setProgressMessage] = useState<string | null>(null);
 
@@ -213,6 +215,7 @@ export function AvatarsScreen() {
     setFamilyId(resolvedFamilyId);
 
     const resolvedStyleId = profileData.avatar_style_id ?? AVATAR_STYLE_OPTIONS[0].id;
+    setActiveStyleId(profileData.avatar_style_id ?? null);
     setSelectedStyleId(resolvedStyleId);
     if (PRESET_STYLE_IDS.has(resolvedStyleId)) {
       setCustomStyleInput("");
@@ -241,8 +244,9 @@ export function AvatarsScreen() {
       return;
     }
 
+    setNeutralConfirmed(activeStyleId !== null && activeStyleId === selectedStyleId);
     void loadPackForStyle(familyId, currentUserId, selectedStyleId);
-  }, [currentUserId, familyId, loadPackForStyle, selectedStyleId]);
+  }, [activeStyleId, currentUserId, familyId, loadPackForStyle, selectedStyleId]);
 
   const resolveAccessToken = useCallback(async () => {
     if (!supabase) {
@@ -328,6 +332,7 @@ export function AvatarsScreen() {
     setProgressMessage("Generating neutral avatar...");
     setIsGeneratingNeutral(true);
     try {
+      setNeutralConfirmed(false);
       await invokeGeneration(["neutral"]);
     } finally {
       setIsGeneratingNeutral(false);
@@ -335,34 +340,51 @@ export function AvatarsScreen() {
     }
   }, [invokeGeneration]);
 
-  const generateRemainingExpressions = useCallback(async () => {
-    const neutralPreview = avatarPreviews.find((item) => item.expression === "neutral");
-    if (!neutralPreview) {
-      setError("Generate and approve a neutral avatar first.");
+  const confirmNeutral = useCallback(async () => {
+    if (!supabase || !familyId || !currentUserId) {
+      setError("Your profile is not ready yet.");
       return;
     }
 
+    const neutralPreview = avatarPreviews.find((item) => item.expression === "neutral");
+    if (!neutralPreview) {
+      setError("Generate a neutral avatar first.");
+      return;
+    }
+
+    setIsConfirmingNeutral(true);
+    setProgressMessage("Confirming neutral avatar...");
     setError(null);
-    const remainingExpressions: AvatarExpression[] = ["happy", "angry", "crying"];
-    setIsGeneratingExpressions(true);
+
     try {
-      for (const [index, expression] of remainingExpressions.entries()) {
-        setProgressMessage(`Generating ${expression} (${index + 1}/${remainingExpressions.length})...`);
-        const ok = await invokeGeneration([expression]);
-        if (!ok) {
-          return;
-        }
+      const { error: updateError } = await supabase
+        .from("user_profiles")
+        .update({ avatar_style_id: selectedStyleId })
+        .eq("user_id", currentUserId)
+        .eq("family_id", familyId);
+
+      if (updateError) {
+        setError(updateError.message);
+        return;
       }
+
+      setActiveStyleId(selectedStyleId);
+      setNeutralConfirmed(true);
     } finally {
-      setIsGeneratingExpressions(false);
+      setIsConfirmingNeutral(false);
       setProgressMessage(null);
     }
-  }, [avatarPreviews, invokeGeneration]);
+  }, [avatarPreviews, currentUserId, familyId, selectedStyleId, supabase]);
 
   const regenerateSingleExpression = useCallback(
     async (expression: AvatarExpression) => {
       if (expression !== "neutral" && !avatarPreviews.some((item) => item.expression === "neutral")) {
-        setError("Generate and approve a neutral avatar first.");
+        setError("Generate and confirm a neutral avatar first.");
+        return;
+      }
+
+      if (expression !== "neutral" && !neutralConfirmed) {
+        setError("Confirm your neutral avatar first.");
         return;
       }
 
@@ -376,7 +398,7 @@ export function AvatarsScreen() {
         setProgressMessage(null);
       }
     },
-    [avatarPreviews, invokeGeneration],
+    [avatarPreviews, invokeGeneration, neutralConfirmed],
   );
 
   const applyCustomStyle = useCallback(() => {
@@ -404,8 +426,7 @@ export function AvatarsScreen() {
   const hasNeutralPreview = neutralPreview !== null;
   const usingCustomStyle = !PRESET_STYLE_IDS.has(selectedStyleId);
   const normalizedCustomStyle = normalizeCustomStyle(customStyleInput);
-  const anyGenerationInFlight =
-    isGeneratingNeutral || isGeneratingExpressions || regeneratingExpression !== null;
+  const anyGenerationInFlight = isGeneratingNeutral || isConfirmingNeutral || regeneratingExpression !== null;
   const canApplyCustomStyle =
     normalizedCustomStyle.length > 0 && normalizedCustomStyle !== selectedStyleId && !anyGenerationInFlight;
   const inputStyle = {
@@ -516,12 +537,15 @@ export function AvatarsScreen() {
 
           <PrimaryButton
             onPress={() => {
-              void generateRemainingExpressions();
+              void confirmNeutral();
             }}
-            disabled={loading || anyGenerationInFlight || !neutralPreview}
+            disabled={loading || anyGenerationInFlight || !neutralPreview || neutralConfirmed}
           >
-            {isGeneratingExpressions ? "Generating Expressions..." : "Confirm Neutral & Generate Full Pack"}
+            {isConfirmingNeutral ? "Confirming..." : neutralConfirmed ? "Neutral Confirmed" : "Confirm Neutral"}
           </PrimaryButton>
+          <AppText muted>
+            After confirming, generate Happy / Angry / Crying one at a time below.
+          </AppText>
         </InfoCard>
 
         <InfoCard>
@@ -559,18 +583,22 @@ export function AvatarsScreen() {
                         onPress={() => {
                           void regenerateSingleExpression(expression);
                         }}
-                        disabled={loading || anyGenerationInFlight || !hasNeutralPreview}
+                        disabled={loading || anyGenerationInFlight || !hasNeutralPreview || !neutralConfirmed}
                         style={[
                           styles.previewRegenerateButton,
                           {
                             borderColor: colors.border,
                             backgroundColor: colors.background,
-                            opacity: loading || anyGenerationInFlight || !hasNeutralPreview ? 0.6 : 1,
+                            opacity: loading || anyGenerationInFlight || !hasNeutralPreview || !neutralConfirmed ? 0.6 : 1,
                           },
                         ]}
                       >
                         <AppText variant="caption" muted>
-                          {regeneratingExpression === expression ? "Regenerating..." : "Regenerate"}
+                          {regeneratingExpression === expression
+                            ? "Generating..."
+                            : preview
+                              ? "Regenerate"
+                              : "Generate"}
                         </AppText>
                       </Pressable>
                     ) : null}
