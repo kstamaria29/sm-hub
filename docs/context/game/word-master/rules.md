@@ -43,7 +43,8 @@ Scoring is Scrabble-like:
 - **Bingo bonus**: +50 points when using all 7 tiles in a single move.
 - **Dictionary validation is enforced**: all scored words must be valid English.
   - Validation uses an **offline ispell dictionary** when available in Supabase Postgres.
-  - If ispell dictionary files are missing, play turns will return a “Dictionary not configured” error until configured.
+  - If ispell dictionary files are missing, Word Master falls back to `public.word_master_dictionary_words` (a seeded word list table).
+  - If neither is available/seeded, play turns will return a “Dictionary not configured” error until configured.
 
 ## Events
 

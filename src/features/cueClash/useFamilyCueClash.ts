@@ -484,30 +484,38 @@ export function useFamilyCueClash(): FamilyCueClashState {
     setEndingGame(true);
     setError(null);
 
-    const accessToken = await resolveAccessToken();
-    if (!accessToken) {
-      setError("Your session is invalid or expired. Please sign out and sign in again.");
-      setEndingGame(false);
+    try {
+      const accessToken = await resolveAccessToken();
+      if (!accessToken) {
+        setError("Your session is invalid or expired. Please sign out and sign in again.");
+        return false;
+      }
+
+      const { error: invokeError } = await supabase.functions.invoke("cue-clash-end", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: {
+          gameId: game.id,
+          reason: "admin_end",
+        },
+      });
+
+      if (invokeError) {
+        setError(await parseFunctionInvokeError(invokeError as { message: string; context?: Response }));
+        return false;
+      }
+
+      setGame(null);
+      setPlayers([]);
+      setEvents([]);
+      await load();
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to end Cue Clash game.";
+      setError(message);
       return false;
-    }
-
-    const { error: invokeError } = await supabase.functions.invoke("cue-clash-end", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      body: {
-        gameId: game.id,
-        reason: "admin_end",
-      },
-    });
-
-    if (invokeError) {
-      setError(await parseFunctionInvokeError(invokeError as { message: string; context?: Response }));
+    } finally {
       setEndingGame(false);
-      return false;
     }
-
-    await load();
-    setEndingGame(false);
-    return true;
   }, [game, load, resolveAccessToken, role, supabase]);
 
   const isMyTurn = Boolean(
@@ -543,4 +551,3 @@ export function useFamilyCueClash(): FamilyCueClashState {
     endGame,
   };
 }
-

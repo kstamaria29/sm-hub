@@ -10,6 +10,7 @@
 - `word-master-play`: authoritative Word Master turn executor (tile placements)
 - `word-master-pass`: authoritative Word Master pass executor
 - `word-master-end`: admin ends/cancels the current authoritative Word Master session
+- Word Master dictionary validation uses an offline ispell dictionary when available; otherwise seed `public.word_master_dictionary_words`.
 - `cue-clash-start`: admin starts a new authoritative Cue Clash (8-ball pool) session
 - `cue-clash-shot`: authoritative Cue Clash shot executor (physics simulation + rules)
 - `cue-clash-end`: admin ends/cancels the current authoritative Cue Clash session

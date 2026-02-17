@@ -20,8 +20,8 @@ Current implementation snapshot:
 - Chat room is functional with realtime message timeline + reactions.
 - Games screen supports a game hub with selections:
   - Snakes & Ladders (authoritative start/roll/end; board grid rendering, event banners, expression-aware tokens)
-  - Word Master (authoritative start/play/pass/end; board + rack + Scrabble-like scoring + dictionary validation)
-  - Cue Clash (authoritative start/shot/end; physics replay + ball animations)
+  - Word Master (authoritative start/play/pass/end; board + rack + drag/drop; Scrabble-like scoring + dictionary validation)
+  - Cue Clash (authoritative start/shot/end; portrait-optimized table; physics replay + ball animations)
 - Settings/Profile supports:
   - display name updates
   - cinematics toggle

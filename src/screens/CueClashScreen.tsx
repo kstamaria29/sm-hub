@@ -93,6 +93,7 @@ function Ball({
   ballId,
   diameterPx,
   tableScale,
+  rotateTable,
   positions,
   pocketedMask,
   positionScale,
@@ -100,6 +101,7 @@ function Ball({
   ballId: number;
   diameterPx: number;
   tableScale: number;
+  rotateTable: boolean;
   positions: SharedValue<number[]>;
   pocketedMask: SharedValue<number>;
   positionScale: number;
@@ -113,16 +115,18 @@ function Ball({
     const mask = pocketedMask.value;
     const isPocketed = (mask & (1 << ballId)) !== 0;
 
-    const x = (p[ballId * 2] ?? 0) / positionScale;
-    const y = (p[ballId * 2 + 1] ?? 0) / positionScale;
-    const left = x * tableScale - radiusPx;
-    const top = y * tableScale - radiusPx;
+    const physicalX = (p[ballId * 2] ?? 0) / positionScale;
+    const physicalY = (p[ballId * 2 + 1] ?? 0) / positionScale;
+    const viewX = rotateTable ? physicalY : physicalX;
+    const viewY = rotateTable ? physicalX : physicalY;
+    const left = viewX * tableScale - radiusPx;
+    const top = viewY * tableScale - radiusPx;
 
     return {
       opacity: isPocketed ? 0 : 1,
       transform: [{ translateX: left }, { translateY: top }],
     };
-  }, [ballId, positionScale, radiusPx, tableScale]);
+  }, [ballId, positionScale, radiusPx, rotateTable, tableScale]);
 
   return (
     <Animated.View
@@ -188,8 +192,12 @@ export function CueClashScreen({ onBack }: CueClashScreenProps) {
   const { colors, radius, spacing } = useTheme();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
+  const rotateTable = !isLandscape;
 
   const gameState = useFamilyCueClash();
+  const canShoot = gameState.canShoot;
+  const shooting = gameState.shooting;
+  const shoot = gameState.shoot;
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
 
   const [tableLayout, setTableLayout] = useState<{ width: number; height: number } | null>(null);
@@ -198,6 +206,8 @@ export function CueClashScreen({ onBack }: CueClashScreenProps) {
   const [aimError, setAimError] = useState<string | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
   const [lastAnimatedEventId, setLastAnimatedEventId] = useState<number | null>(null);
+  const aimVectorRef = useRef<{ x: number; y: number } | null>(null);
+  const aimPowerRef = useRef(0);
 
   const ballsState = useMemo(() => {
     if (!gameState.game) {
@@ -214,8 +224,14 @@ export function CueClashScreen({ onBack }: CueClashScreenProps) {
   const pocketedMaskSv = useSharedValue<number>(ballsState?.pocketedMask ?? 0);
   const animationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const tableScale = tableLayout ? tableLayout.width / tableConfig.width : 0;
+  const tableAspectRatio = rotateTable ? tableConfig.height / tableConfig.width : tableConfig.width / tableConfig.height;
+  const tableScale = tableLayout ? tableLayout.width / (rotateTable ? tableConfig.height : tableConfig.width) : 0;
   const ballDiameterPx = tableScale > 0 ? tableConfig.ballRadius * 2 * tableScale : 0;
+  const railWidthPx = tableScale > 0 ? Math.max(8, Math.min(14, Math.round(ballDiameterPx * 0.52))) : 10;
+  const pocketDiameterPx =
+    tableScale > 0 ? Math.max(20, Math.min(38, Math.round(tableConfig.pocketRadius * 2 * tableScale))) : 26;
+  const pocketInsetPx = Math.max(4, Math.round(railWidthPx - 4));
+  const centerPocketOffsetPx = Math.max(2, pocketInsetPx - 4);
 
   useEffect(() => {
     if (!ballsState || isAnimating) {
@@ -307,18 +323,26 @@ export function CueClashScreen({ onBack }: CueClashScreenProps) {
       return null;
     }
 
-    const cueX = ballsState.positions[0] / positionScale;
-    const cueY = ballsState.positions[1] / positionScale;
-    return { x: cueX * tableScale, y: cueY * tableScale };
-  }, [ballsState, positionScale, tableLayout, tableScale]);
+    const physicalCueX = ballsState.positions[0] / positionScale;
+    const physicalCueY = ballsState.positions[1] / positionScale;
+    const viewCueX = (rotateTable ? physicalCueY : physicalCueX) * tableScale;
+    const viewCueY = (rotateTable ? physicalCueX : physicalCueY) * tableScale;
+    return { x: viewCueX, y: viewCueY };
+  }, [ballsState, positionScale, rotateTable, tableLayout, tableScale]);
 
   const panResponder = useMemo(() => {
     const maxDrag = 180;
+    const canAim = canShoot && !isAnimating && !shooting;
 
     return PanResponder.create({
-      onStartShouldSetPanResponder: () => gameState.canShoot && !isAnimating && !gameState.shooting,
+      onStartShouldSetPanResponder: () => canAim,
+      onStartShouldSetPanResponderCapture: () => canAim,
+      onMoveShouldSetPanResponder: () => canAim,
+      onMoveShouldSetPanResponderCapture: () => canAim,
       onPanResponderGrant: (evt) => {
         setAimError(null);
+        aimVectorRef.current = null;
+        aimPowerRef.current = 0;
         if (!cueBallCenterPx) {
           setAimError("Cue ball not ready yet.");
           return;
@@ -335,6 +359,9 @@ export function CueClashScreen({ onBack }: CueClashScreenProps) {
           return;
         }
 
+        const initialVector = { x: 0.001, y: 0.001 };
+        aimVectorRef.current = initialVector;
+        aimPowerRef.current = 0;
         setAimVectorPx({ x: 0.001, y: 0.001 });
         setAimPower(0);
       },
@@ -349,30 +376,43 @@ export function CueClashScreen({ onBack }: CueClashScreenProps) {
         const dist = Math.hypot(dx, dy);
         const clampedDist = Math.min(maxDrag, dist);
         const scale = dist > 0 ? clampedDist / dist : 0;
-        setAimVectorPx({ x: dx * scale, y: dy * scale });
-        setAimPower(clampedDist / maxDrag);
+        const nextVector = { x: dx * scale, y: dy * scale };
+        const nextPower = clampedDist / maxDrag;
+        aimVectorRef.current = nextVector;
+        aimPowerRef.current = nextPower;
+        setAimVectorPx(nextVector);
+        setAimPower(nextPower);
       },
       onPanResponderRelease: async () => {
-        const vector = aimVectorPx;
+        const vector = aimVectorRef.current;
         if (!vector || !cueBallCenterPx || !tableScale || tableScale <= 0) {
+          aimVectorRef.current = null;
+          aimPowerRef.current = 0;
           setAimVectorPx(null);
           setAimPower(0);
           return;
         }
 
-        const direction = { x: vector.x / tableScale, y: vector.y / tableScale };
-        const power = Math.max(0.05, Math.min(1, aimPower));
+        const direction = rotateTable
+          ? { x: vector.y / tableScale, y: vector.x / tableScale }
+          : { x: vector.x / tableScale, y: vector.y / tableScale };
+        const power = Math.max(0.05, Math.min(1, aimPowerRef.current));
 
+        aimVectorRef.current = null;
+        aimPowerRef.current = 0;
         setAimVectorPx(null);
         setAimPower(0);
-        await gameState.shoot(direction, power);
+        await shoot(direction, power);
       },
       onPanResponderTerminate: () => {
+        aimVectorRef.current = null;
+        aimPowerRef.current = 0;
         setAimVectorPx(null);
         setAimPower(0);
       },
+      onPanResponderTerminationRequest: () => false,
     });
-  }, [aimPower, aimVectorPx, ballDiameterPx, cueBallCenterPx, gameState, isAnimating, tableScale]);
+  }, [ballDiameterPx, canShoot, cueBallCenterPx, isAnimating, rotateTable, shoot, shooting, tableScale]);
 
   const handleTableLayout = useCallback((event: LayoutChangeEvent) => {
     const next = {
@@ -429,6 +469,7 @@ export function CueClashScreen({ onBack }: CueClashScreenProps) {
   return (
     <Screen padded={false}>
       <ScrollView
+        scrollEnabled={aimVectorPx === null}
         contentContainerStyle={[
           styles.content,
           {
@@ -474,6 +515,7 @@ export function CueClashScreen({ onBack }: CueClashScreenProps) {
                   style={[
                     styles.table,
                     {
+                      aspectRatio: tableAspectRatio,
                       borderColor: colors.border,
                       borderRadius: radius.lg,
                       backgroundColor: "#0B3D2E",
@@ -481,13 +523,23 @@ export function CueClashScreen({ onBack }: CueClashScreenProps) {
                   ]}
                   {...panResponder.panHandlers}
                 >
-                  <View style={[styles.rail, { borderRadius: radius.lg, borderColor: "#0F2A1F" }]} />
-                  <View style={[styles.pocket, styles.pocketTL]} />
-                  <View style={[styles.pocket, styles.pocketTM]} />
-                  <View style={[styles.pocket, styles.pocketTR]} />
-                  <View style={[styles.pocket, styles.pocketBL]} />
-                  <View style={[styles.pocket, styles.pocketBM]} />
-                  <View style={[styles.pocket, styles.pocketBR]} />
+                  <View style={[styles.rail, { borderRadius: radius.lg, borderColor: "#0F2A1F", borderWidth: railWidthPx }]} />
+                  <View style={[styles.pocket, { left: pocketInsetPx, top: pocketInsetPx, width: pocketDiameterPx, height: pocketDiameterPx, borderRadius: pocketDiameterPx / 2 }]} />
+                  <View
+                    style={[
+                      styles.pocket,
+                      { left: "50%", top: centerPocketOffsetPx, marginLeft: -pocketDiameterPx / 2, width: pocketDiameterPx, height: pocketDiameterPx, borderRadius: pocketDiameterPx / 2 },
+                    ]}
+                  />
+                  <View style={[styles.pocket, { right: pocketInsetPx, top: pocketInsetPx, width: pocketDiameterPx, height: pocketDiameterPx, borderRadius: pocketDiameterPx / 2 }]} />
+                  <View style={[styles.pocket, { left: pocketInsetPx, bottom: pocketInsetPx, width: pocketDiameterPx, height: pocketDiameterPx, borderRadius: pocketDiameterPx / 2 }]} />
+                  <View
+                    style={[
+                      styles.pocket,
+                      { left: "50%", bottom: centerPocketOffsetPx, marginLeft: -pocketDiameterPx / 2, width: pocketDiameterPx, height: pocketDiameterPx, borderRadius: pocketDiameterPx / 2 },
+                    ]}
+                  />
+                  <View style={[styles.pocket, { right: pocketInsetPx, bottom: pocketInsetPx, width: pocketDiameterPx, height: pocketDiameterPx, borderRadius: pocketDiameterPx / 2 }]} />
 
                   {aimLine}
 
@@ -499,6 +551,7 @@ export function CueClashScreen({ onBack }: CueClashScreenProps) {
                           ballId={ballId}
                           diameterPx={ballDiameterPx}
                           tableScale={tableScale}
+                          rotateTable={rotateTable}
                           positions={positionsSv}
                           pocketedMask={pocketedMaskSv}
                           positionScale={positionScale}
@@ -685,7 +738,6 @@ const styles = StyleSheet.create({
   },
   table: {
     width: "100%",
-    aspectRatio: 2,
     borderWidth: 1,
     overflow: "hidden",
     position: "relative",
@@ -693,24 +745,14 @@ const styles = StyleSheet.create({
   },
   rail: {
     ...StyleSheet.absoluteFillObject,
-    borderWidth: 10,
     borderColor: "#0F2A1F",
     opacity: 0.7,
   },
   pocket: {
     position: "absolute",
-    width: 26,
-    height: 26,
-    borderRadius: 13,
     backgroundColor: "#020617",
     opacity: 0.9,
   },
-  pocketTL: { left: 6, top: 6 },
-  pocketTM: { left: "50%", top: 2, marginLeft: -13 },
-  pocketTR: { right: 6, top: 6 },
-  pocketBL: { left: 6, bottom: 6 },
-  pocketBM: { left: "50%", bottom: 2, marginLeft: -13 },
-  pocketBR: { right: 6, bottom: 6 },
   ball: {
     position: "absolute",
     borderWidth: 1,

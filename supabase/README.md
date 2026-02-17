@@ -27,8 +27,9 @@ Run SQL manually in the Supabase Dashboard SQL Editor in this exact order:
 19. `supabase/migrations/202602160009_cue_clash_end_rpc.sql`
 20. `supabase/migrations/202602170001_word_master_dictionary_and_bonuses.sql`
 21. `supabase/migrations/202602170002_word_master_play_turn_scoring.sql`
-22. `supabase/storage/001_avatar_buckets.sql`
-23. `supabase/tests/rls_hardening.sql` (verification script; includes `rollback`)
+22. `supabase/migrations/202602170003_word_master_dictionary_fallback_table.sql`
+23. `supabase/storage/001_avatar_buckets.sql`
+24. `supabase/tests/rls_hardening.sql` (verification script; includes `rollback`)
 
 After SQL is applied, configure edge function secrets in Supabase:
 
@@ -76,7 +77,7 @@ Deploy functions from CLI (linked to your hosted project) or Dashboard:
 - [ ] `game-roll-move` executes transactional authoritative roll/move RPC
 - [ ] `word-master-start` starts exactly one active Word Master session per room
 - [ ] `word-master-play` executes transactional authoritative turn placement RPC
-- [ ] Word Master dictionary validation works (ispell dictionary available) or shows a clear “Dictionary not configured” error
+- [ ] Word Master dictionary validation works (either ispell dictionary available or `word_master_dictionary_words` is seeded)
 - [ ] `cue-clash-start` starts exactly one active Cue Clash session per room (2 players max; 1-player admin test allowed)
 - [ ] `cue-clash-shot` executes authoritative shot simulation + state update
 - [ ] `avatar-generate-pack` generates and uploads 4 transparent PNG expressions

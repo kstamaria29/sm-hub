@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,6 +24,7 @@ type WordMasterScreenProps = {
 };
 
 type DraftPlacement = WordMasterPlacement & { rackIndex: number };
+type BoardRect = { x: number; y: number; width: number; height: number };
 
 function asJsonObject(value: Json): Record<string, Json> | null {
   if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -173,6 +175,55 @@ function Tile({
   );
 }
 
+function FloatingTile({
+  letter,
+  points,
+  sizePx,
+}: {
+  letter: string;
+  points: number;
+  sizePx: number;
+}) {
+  const { colors, radius } = useTheme();
+
+  return (
+    <View
+      style={[
+        styles.floatingTile,
+        styles.tileShadow,
+        {
+          width: sizePx,
+          height: sizePx,
+          borderRadius: radius.sm,
+          backgroundColor: colors.tileFace,
+          borderColor: colors.tileBorder,
+        },
+      ]}
+    >
+      <View
+        pointerEvents="none"
+        style={[
+          styles.tileHighlight,
+          {
+            borderRadius: Math.max(0, radius.sm - 4),
+          },
+        ]}
+      />
+      <View
+        pointerEvents="none"
+        style={[
+          styles.tileShade,
+          {
+            borderRadius: Math.max(0, radius.sm - 4),
+          },
+        ]}
+      />
+      <AppText style={styles.floatingLetter}>{letter}</AppText>
+      <AppText style={styles.floatingPoints}>{points}</AppText>
+    </View>
+  );
+}
+
 function BoardTile({ letter, points }: { letter: string; points: number }) {
   const { colors, radius } = useTheme();
 
@@ -216,6 +267,7 @@ function BoardCell({
   canInteract,
   isCenter,
   isDraft,
+  isHover,
   bonusLabel,
   backgroundColor,
   borderColor,
@@ -225,6 +277,7 @@ function BoardCell({
   canInteract: boolean;
   isCenter: boolean;
   isDraft: boolean;
+  isHover: boolean;
   bonusLabel: string | null;
   backgroundColor: string;
   borderColor: string;
@@ -259,7 +312,7 @@ function BoardCell({
       style={({ pressed }) => [
         styles.boardCell,
         {
-          borderColor,
+          borderColor: isHover ? colors.accent : borderColor,
           backgroundColor,
           opacity: pressed && canInteract ? 0.9 : 1,
         },
@@ -288,6 +341,14 @@ export function WordMasterScreen({ onBack }: WordMasterScreenProps) {
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
   const [selectedRackIndex, setSelectedRackIndex] = useState<number | null>(null);
   const [draftPlacements, setDraftPlacements] = useState<DraftPlacement[]>([]);
+  const [boardRect, setBoardRect] = useState<BoardRect | null>(null);
+  const [dragging, setDragging] = useState<{ rackIndex: number; letter: string } | null>(null);
+  const [hoverCell, setHoverCell] = useState<{ row: number; col: number } | null>(null);
+  const lastHoverKeyRef = useRef<string | null>(null);
+  const lastBoardMeasureTsRef = useRef(0);
+  const boardGridRef = useRef<View>(null);
+  const dragX = useSharedValue(0);
+  const dragY = useSharedValue(0);
 
   useEffect(() => {
     if (gameState.currentUserId && selectedPlayers.length === 0) {
@@ -297,6 +358,20 @@ export function WordMasterScreen({ onBack }: WordMasterScreenProps) {
 
   const boardSize = gameState.game?.board_size ?? 11;
   const center = Math.floor((boardSize + 1) / 2);
+  const dragTileSizePx = useMemo(() => {
+    if (!boardRect) {
+      return 44;
+    }
+    return Math.max(34, Math.min(64, boardRect.width / boardSize));
+  }, [boardRect, boardSize]);
+  const floatingStyle = useAnimatedStyle(
+    () => ({
+      left: dragX.value - dragTileSizePx / 2,
+      top: dragY.value - dragTileSizePx / 2,
+      transform: [{ scale: 1.02 }],
+    }),
+    [dragTileSizePx],
+  );
 
   const myRack = useMemo(() => {
     if (!gameState.currentUserId) {
@@ -444,7 +519,7 @@ export function WordMasterScreen({ onBack }: WordMasterScreenProps) {
       return {
         title: "Dictionary not configured",
         message:
-          "This Supabase Postgres instance is missing the offline ispell dictionary files required for strict validation.",
+          "Seed `word_master_dictionary_words` (recommended) or enable an offline ispell dictionary in Supabase Postgres to turn on strict validation.",
         items: [],
       };
     }
@@ -453,9 +528,78 @@ export function WordMasterScreen({ onBack }: WordMasterScreenProps) {
   }, [gameState.error]);
 
   const canInteract = gameState.canPlayTurn && !gameState.playingTurn;
+  const isDragging = dragging !== null;
 
   const clearDraft = () => {
     setDraftPlacements([]);
+    setSelectedRackIndex(null);
+  };
+
+  const measureBoardRect = useCallback(() => {
+    requestAnimationFrame(() => {
+      boardGridRef.current?.measureInWindow((x, y, width, height) => {
+        if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(width) && Number.isFinite(height)) {
+          setBoardRect({ x, y, width, height });
+        }
+      });
+    });
+  }, []);
+
+  const scheduleBoardRectMeasure = useCallback(() => {
+    const now = Date.now();
+    if (now - lastBoardMeasureTsRef.current < 90) {
+      return;
+    }
+    lastBoardMeasureTsRef.current = now;
+    measureBoardRect();
+  }, [measureBoardRect]);
+
+  const resolveDropCell = useMemo(() => {
+    if (!boardRect) {
+      return null;
+    }
+
+    return (pageX: number, pageY: number) => {
+      const gridSize = Math.min(boardRect.width, boardRect.height);
+      const gridX = boardRect.x + (boardRect.width - gridSize) / 2;
+      const gridY = boardRect.y + (boardRect.height - gridSize) / 2;
+      const cellSize = gridSize / boardSize;
+      const relX = pageX - gridX;
+      const relY = pageY - gridY;
+      if (relX < 0 || relY < 0 || relX > gridSize || relY > gridSize) {
+        return null;
+      }
+
+      const col = Math.floor(relX / cellSize) + 1;
+      const row = Math.floor(relY / cellSize) + 1;
+      if (row < 1 || row > boardSize || col < 1 || col > boardSize) {
+        return null;
+      }
+
+      return { row, col };
+    };
+  }, [boardRect, boardSize]);
+
+  const tryDropTile = (rackIndex: number, letter: string, pageX: number, pageY: number) => {
+    if (!canInteract || !resolveDropCell) {
+      return;
+    }
+
+    const target = resolveDropCell(pageX, pageY);
+    if (!target) {
+      return;
+    }
+
+    const key = `${target.row},${target.col}`;
+    if (tileByKey.has(key)) {
+      return;
+    }
+
+    if (draftByKey.has(key)) {
+      return;
+    }
+
+    setDraftPlacements((current) => [...current, { row: target.row, col: target.col, letter, rackIndex }]);
     setSelectedRackIndex(null);
   };
 
@@ -522,6 +666,7 @@ export function WordMasterScreen({ onBack }: WordMasterScreenProps) {
 
   return (
     <Screen padded={false}>
+      <View style={{ flex: 1 }}>
       <View style={[styles.header, { paddingHorizontal: spacing.lg, paddingTop: spacing.md }]}>
         <View style={[styles.headerRow, { gap: spacing.sm }]}>
           <IconButton onPress={onBack} accessibilityLabel="Back">
@@ -543,6 +688,11 @@ export function WordMasterScreen({ onBack }: WordMasterScreenProps) {
       </View>
 
       <ScrollView
+        scrollEnabled={!isDragging}
+        scrollEventThrottle={16}
+        onScroll={scheduleBoardRectMeasure}
+        onScrollEndDrag={measureBoardRect}
+        onMomentumScrollEnd={measureBoardRect}
         contentContainerStyle={[
           styles.content,
           {
@@ -594,22 +744,24 @@ export function WordMasterScreen({ onBack }: WordMasterScreenProps) {
               })}
             </View>
 
-            <View
-              style={[
-                styles.boardFrame,
-                {
-                  borderRadius: radius.lg,
-                  backgroundColor: colors.boardFrame,
-                  padding: spacing.sm,
-                },
-              ]}
-            >
               <View
                 style={[
-                  styles.board,
+                  styles.boardFrame,
                   {
-                    borderRadius: radius.md,
-                    borderColor: colors.border,
+                    borderRadius: radius.lg,
+                    backgroundColor: colors.boardFrame,
+                    padding: spacing.sm,
+                  },
+                ]}
+              >
+                <View
+                  ref={boardGridRef}
+                  onLayout={measureBoardRect}
+                  style={[
+                    styles.board,
+                    {
+                      borderRadius: radius.md,
+                      borderColor: colors.border,
                     backgroundColor: colors.boardCell,
                   },
                 ]}
@@ -640,12 +792,14 @@ export function WordMasterScreen({ onBack }: WordMasterScreenProps) {
                         if (isDraft) {
                           backgroundColor = colors.accentMuted;
                         }
+                        const isHover = Boolean(hoverCell && hoverCell.row === row && hoverCell.col === col);
                         return (
                           <BoardCell
                             key={key}
                             canInteract={canInteract}
                             isCenter={isCenter}
                             isDraft={isDraft}
+                            isHover={isHover}
                             bonusLabel={bonus.label}
                             backgroundColor={backgroundColor}
                             borderColor={colors.border}
@@ -712,20 +866,80 @@ export function WordMasterScreen({ onBack }: WordMasterScreenProps) {
                 <Tag tone="neutral" label={`Bag: ${gameState.game.bag.length}`} />
               </View>
 
-              <View style={[styles.rackRow, { gap: spacing.xs }]}>
+                <View style={[styles.rackRow, { gap: spacing.xs }]}>
                 {myRack.map((letter, index) => {
-                  const used = usedRackIndices.has(index);
+                  const used = usedRackIndices.has(index) || Boolean(dragging && dragging.rackIndex === index);
+                  const responder = PanResponder.create({
+                    onMoveShouldSetPanResponderCapture: (_, gesture) => {
+                      if (!canInteract || used) {
+                        return false;
+                      }
+                      return Math.abs(gesture.dx) > 6 || Math.abs(gesture.dy) > 6;
+                    },
+                    onMoveShouldSetPanResponder: (_, gesture) => {
+                      if (!canInteract || used) {
+                        return false;
+                      }
+                      return Math.abs(gesture.dx) > 6 || Math.abs(gesture.dy) > 6;
+                    },
+                    onPanResponderGrant: (evt) => {
+                      if (!canInteract || used) {
+                        return;
+                      }
+                      measureBoardRect();
+                      setDragging({ rackIndex: index, letter });
+                      setHoverCell(null);
+                      lastHoverKeyRef.current = null;
+                      dragX.value = evt.nativeEvent.pageX;
+                      dragY.value = evt.nativeEvent.pageY;
+                    },
+                    onPanResponderMove: (evt) => {
+                      if (!canInteract || used) {
+                        return;
+                      }
+                      dragX.value = evt.nativeEvent.pageX;
+                      dragY.value = evt.nativeEvent.pageY;
+                      if (resolveDropCell) {
+                        const target = resolveDropCell(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
+                        const key = target ? `${target.row},${target.col}` : null;
+                        if (key !== lastHoverKeyRef.current) {
+                          lastHoverKeyRef.current = key;
+                          setHoverCell(target);
+                        }
+                      }
+                    },
+                    onPanResponderRelease: (evt) => {
+                      if (!canInteract || used) {
+                        setDragging(null);
+                        setHoverCell(null);
+                        lastHoverKeyRef.current = null;
+                        return;
+                      }
+                      tryDropTile(index, letter, evt.nativeEvent.pageX, evt.nativeEvent.pageY);
+                      setDragging(null);
+                      setHoverCell(null);
+                      lastHoverKeyRef.current = null;
+                    },
+                    onPanResponderTerminate: () => {
+                      setDragging(null);
+                      setHoverCell(null);
+                      lastHoverKeyRef.current = null;
+                    },
+                    onPanResponderTerminationRequest: () => false,
+                  });
+
                   return (
-                    <Tile
-                      key={`${index}:${letter}`}
-                      letter={used ? "" : letter}
-                      points={used ? 0 : resolveTilePoints(letter)}
-                      selected={selectedRackIndex === index}
-                      disabled={!canInteract || used}
-                      onPress={() => {
-                        setSelectedRackIndex((current) => (current === index ? null : index));
-                      }}
-                    />
+                    <View key={`${index}:${letter}`} style={{ flex: 1, minWidth: 0 }} {...responder.panHandlers}>
+                      <Tile
+                        letter={used ? "" : letter}
+                        points={used ? 0 : resolveTilePoints(letter)}
+                        selected={selectedRackIndex === index}
+                        disabled={!canInteract || used}
+                        onPress={() => {
+                          setSelectedRackIndex((current) => (current === index ? null : index));
+                        }}
+                      />
+                    </View>
                   );
                 })}
               </View>
@@ -800,6 +1014,18 @@ export function WordMasterScreen({ onBack }: WordMasterScreenProps) {
           </InfoCard>
         )}
       </ScrollView>
+      {dragging ? (
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <Animated.View style={[styles.floatingWrap, floatingStyle]}>
+            <FloatingTile
+              letter={dragging.letter}
+              points={resolveTilePoints(dragging.letter)}
+              sizePx={dragTileSizePx}
+            />
+          </Animated.View>
+        </View>
+      ) : null}
+      </View>
     </Screen>
   );
 }

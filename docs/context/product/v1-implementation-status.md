@@ -60,6 +60,7 @@ Temporary testing mode:
   - play tiles (`word-master-play` → `word_master_play_turn_v1`)
   - pass (`word-master-pass` → `word_master_pass_turn_v1`)
   - end game (`word-master-end` → `word_master_end_game_v1`)
+- Drag-and-drop from rack to board is implemented (tap-to-place remains supported).
 - Scrabble-like scoring is implemented:
   - main word + cross words
   - bonus squares (`DL`, `TL`, `DW`, `TW`) applied to newly placed tiles
@@ -74,6 +75,7 @@ Temporary testing mode:
   - start game (`cue-clash-start` → RPC `cue_clash_start_v1`)
   - take shot (`cue-clash-shot` → RPC `cue_clash_take_shot_v1`)
   - end game (`cue-clash-end` → RPC `cue_clash_end_game_v1`)
+- In portrait, the table view rotates for a larger, more playable layout.
 - 2-player max is enforced; 1-player admin testing is supported.
 
 ### Profile and avatar flow
@@ -123,6 +125,7 @@ Temporary testing mode:
 - `202602160009_cue_clash_end_rpc.sql`
 - `202602170001_word_master_dictionary_and_bonuses.sql`
 - `202602170002_word_master_play_turn_scoring.sql`
+- `202602170003_word_master_dictionary_fallback_table.sql`
 
 ## Active Edge Functions
 
